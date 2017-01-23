@@ -65,20 +65,6 @@ typedef struct __BpCallbackContext
 	void *						user;
 }BpCallbackContext;
 
-#define _stringfy(x) #x
-
-#define AB_VERSION_MAJOR 0
-#define AB_VERSION_MINOR 3
-#define AB_VERSION_BUILD 13
-
-#define AB_PHASE		"BETA"
-
-#define AB_APPNAME		"Api Break (" AB_PHASE ")"
-
-#define AB_VERSION_STRING(maj,min,build) _stringfy(maj) "." _stringfy(min) " Build: " _stringfy(build)
-
-#define AB_VERSTR AB_VERSION_STRING(AB_VERSION_MAJOR,AB_VERSION_MINOR,AB_VERSION_BUILD)
-#define AB_BUILD_TIME __DATE__ " " __TIME__
 
 bool AbHasDebuggingProcess();
 

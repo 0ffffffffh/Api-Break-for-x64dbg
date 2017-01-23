@@ -65,6 +65,10 @@ UIOBJECT *UiCreateDialog(
 	PVOID param,
 	WINDOWCREATIONINFO *wci);
 
-VOID UiDestroyDialog(UIOBJECT *ui);
+void UiReleaseObject(UIOBJECT *ui);
+
+BOOL UiDestroyDialog(UIOBJECT *ui);
+
+void UiForceCloseAllActiveWindows();
 
 #endif //__UI_H_

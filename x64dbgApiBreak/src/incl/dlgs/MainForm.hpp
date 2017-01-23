@@ -211,25 +211,25 @@ public :
 	{
 		switch (LOWORD(wp))
 		{
-		case IDC_BTNSETBP:
-			SetBP();
+			case IDC_BTNSETBP:
+				SetBP();
+				break;
+			case IDC_CBMODULELIST:
+			{
+				if (HIWORD(wp) == CBN_SELCHANGE)
+				{
+					InvalidateApiFunctionList();
+				}
+			}
 			break;
-		case IDC_CBMODULELIST:
-		{
-			if (HIWORD(wp) == CBN_SELCHANGE)
+			case IDC_CHKBPONXREFS:
 			{
-				InvalidateApiFunctionList();
+				if (HIWORD(wp) == BN_CLICKED)
+				{
+					ToggleTracebackState();
+				}
 			}
-		}
-		case IDC_CHKBPONXREFS:
-		{
-			if (HIWORD(wp) == BN_CLICKED)
-			{
-				ToggleTracebackState();
-			}
-		}
-		break;
-		
+			break;
 		}
 
 		UiWrapper::OnCommand(wp, lp);

@@ -15,8 +15,6 @@ INTERNAL int		AbMenuStackHandle;
 INTERNAL HMODULE	AbPluginModule;
 
 
-MainForm *AbMainForm = NULL;
-
 unordered_map<duint, BpCallbackContext *> AbpBpCallbacks;
 
 BpCallbackContext *AbpLookupBpCallback(duint addr)
@@ -63,7 +61,6 @@ DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
 	initStruct->pluginVersion = MAKEWORD(AB_VERSION_MAJOR, AB_VERSION_MINOR);
 	strcpy_s(initStruct->pluginName, 256, "Api Break");
 	AbPluginHandle = initStruct->pluginHandle;
-	AbMainForm = new MainForm();
 	return true;
 }
 
@@ -71,7 +68,9 @@ DBG_LIBEXPORT bool plugstop()
 {
 	AbpDestroyBpCallbacks();
 	AbReleaseResources();
-	delete AbMainForm;
+
+	UiWrapper::DestroyAllActiveWindows();
+
 	return true;
 }
 
@@ -123,7 +122,9 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 	}
 	else if (info->hEntry == MN_SHOWMAINFORM)
 	{
-		AbMainForm->ShowDialog();
+		//Ps. MainForm automatically deletes itself when the window closed.
+		MainForm *mainForm = new MainForm();
+		mainForm->ShowDialog();
 	}
 }
 

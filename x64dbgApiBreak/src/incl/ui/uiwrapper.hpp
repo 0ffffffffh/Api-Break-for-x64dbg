@@ -48,6 +48,7 @@ private:
 	UIOBJECT *uiObject;
 	WINDOWCREATIONINFO wci;
 	LONG dlgId;
+	bool killingSelf;
 
 	unordered_map<HWND, UiControlBase *> childControls;
 
@@ -66,6 +67,23 @@ private:
 		return it->second;
 	}
 
+	void DestroyControlResources()
+	{
+		unordered_map<HWND, UiControlBase *>::iterator it;
+		UiControlBase *control = NULL;
+
+		if (childControls.size() == 0)
+			return;
+
+		while (childControls.size() > 0)
+		{
+			it = childControls.begin();
+			control = it->second;
+			childControls.erase(it);
+			delete control;
+		}
+	}
+
 private:
 
 	bool SetControlEnableState(ULONG ctrlId, bool state)
@@ -80,6 +98,7 @@ private:
 
 	void InitCommon(LONG dlgId, bool center)
 	{
+		this->killingSelf = false;
 		this->initCompletedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 		this->dlgId = dlgId;
@@ -115,9 +134,20 @@ public:
 
 	~UiWrapper(void)
 	{
+		if (!this->killingSelf)
+		{
+			if (UiIsRunning(this->uiObject))
+				Close();
+		}
+
+		DestroyControlResources();
 		CloseHandle(this->initCompletedEvent);
 	}
 
+	static void DestroyAllActiveWindows()
+	{
+		UiForceCloseAllActiveWindows();
+	}
 
 	virtual bool ShowDialog()
 	{
@@ -180,7 +210,11 @@ public:
 
 	void Close()
 	{
-		UiDestroyDialog(this->uiObject);
+		if (UiDestroyDialog(this->uiObject))
+		{
+			UiReleaseObject(this->uiObject);
+			this->uiObject = NULL;
+		}
 	}
 
 	ULONG GetControlTextA(ULONG ctrlId, LPSTR strBuf, ULONG bufSize)
@@ -308,6 +342,9 @@ public:
 
 	virtual void OnClose()
 	{
+		this->killingSelf = true;
+
+		delete this;
 	}
 
 	virtual void OnPaint()

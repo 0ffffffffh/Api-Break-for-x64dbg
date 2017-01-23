@@ -22,7 +22,7 @@ typedef struct tagIntParam
 
 map<HWND, UIOBJECT *> *gp_windowMap;
 
-void __UiReleaseResources(UIOBJECT *ui);
+void __UiRaiseDisposeCallback(UIOBJECT *ui);
 
 UIOBJECT *__UiGetMappedUiObject(HWND hwnd)
 {
@@ -87,6 +87,12 @@ __forceinline PVOID _UiDecodeParamPointer(PVOID param)
 	}
 
 	return param;
+}
+
+void __UiRaiseDisposeCallback(UIOBJECT *ui)
+{
+	if (ui->uiDisposer)
+		ui->uiDisposer();
 }
 
 INT_PTR CALLBACK _UiMainWndProc(HWND hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
@@ -270,7 +276,7 @@ DWORD WINAPI IntUiWorker(VOID *Arg)
 
 	__UiUnmapHwnd(uiObj->hwnd);
 
-	__UiReleaseResources(uiObj);
+	__UiRaiseDisposeCallback(uiObj);
 
 	return 0;
 }
@@ -321,7 +327,10 @@ BOOL IntUiCreateDialog(UIOBJECT *uiObj)
 
 BOOL UiIsRunning(UIOBJECT *ui)
 {
-	return TRUE;
+	if (!ui)
+		return FALSE;
+
+	return ui->isRunning;
 }
 
 VOID UiRegisterDisposer(UIOBJECT *uiObject, UIAFTEREXITDISPOSER disposer)
@@ -364,15 +373,15 @@ UIOBJECT *UiCreateDialog(
 }
 
 
-void __UiReleaseResources(UIOBJECT *ui)
+void UiReleaseObject(UIOBJECT *ui)
 {
-	if (ui->uiDisposer)
-		ui->uiDisposer();
+	if (!ui)
+		return;
 
 	FREEOBJECT(ui);
 }
 
-void UiDestroyDialog(UIOBJECT *ui)
+BOOL UiDestroyDialog(UIOBJECT *ui)
 {
 	HANDLE uiThread = NULL;
 
@@ -394,5 +403,23 @@ void UiDestroyDialog(UIOBJECT *ui)
 	//block until ui thread exited
 	if (uiThread != NULL &&  uiThread != ((HANDLE)-2))
 		WaitForSingleObject(uiThread, INFINITE);
+
+	return ui->isRunning;
 }
 
+void UiForceCloseAllActiveWindows()
+{
+	map<HWND, UIOBJECT *>::iterator it;
+	UIOBJECT *uiObj = NULL;
+
+	if (gp_windowMap->size() == 0)
+		return;
+
+	while (gp_windowMap->size() > 0)
+	{
+		it = gp_windowMap->begin();
+		uiObj = it->second;
+
+		UiDestroyDialog(uiObj);
+	}
+}
