@@ -8,7 +8,7 @@ Api Break is a [x64dbg](http://www.x64dbg.com) plugin which is aimed to set brea
 
 * API function entry breakpoint (AEB) 
 * Breakpoint at API callers (BAC)
-* Automatically loading imported by process's modules and their API functions.
+* Auto-populating modules and their API functions used by the process.
 
 
 #### **API Function Entry Breakpoint (AEB)**
@@ -16,7 +16,7 @@ Api Break is a [x64dbg](http://www.x64dbg.com) plugin which is aimed to set brea
 It can be useful when the code does obfuscated or indirect api calls or something similar conditions. This mode is automatically (naturally) handles all API calls for the entire module. Also, this mode gives an option to jump automatically to the API caller when the API entry breakpoint hit. It exposes the original caller using single step callstack backtracing.
 
 #### **Breakpoint at API callers (BAC)**
-In technically, this mode is much more flexible and customizable. It does scan dynamically for API calls in specified module or address range. For now, it scans only process's code range. But other features are planned future development.
+In technically, this mode is much more flexible and customizable. It does scan dynamically for API calls in specified module or address range. For now, it scans only process's code range. But other features are planned for future development.
 
 If you have any idea, let me know what ideas you have about it.
 
