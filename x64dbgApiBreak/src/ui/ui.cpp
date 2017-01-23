@@ -412,6 +412,9 @@ void UiForceCloseAllActiveWindows()
 	map<HWND, UIOBJECT *>::iterator it;
 	UIOBJECT *uiObj = NULL;
 
+	if (!gp_windowMap)
+		return;
+
 	if (gp_windowMap->size() == 0)
 		return;
 
