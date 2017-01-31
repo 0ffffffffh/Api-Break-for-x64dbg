@@ -3,12 +3,20 @@
 
 #include <corelib.h>
 
+
+#define HLP_TRIM_LEFT		1
+#define HLP_TRIM_RIGHT		2
+#define HLP_TRIM_BOTH		(HLP_TRIM_LEFT | HLP_TRIM_RIGHT)
+
 void HlpDebugPrint(const char *format, ...);
 
 LPWSTR HlpAnsiToWideString(LPCSTR str);
 LPSTR HlpWideToAnsiString(LPCWSTR str);
 
-void HlpRemoveQuotations(LPSTR str);
+void  HlpTrimChar(LPSTR str, CHAR chr, int option);
+
+
+#define HlpRemoveQuotations(str) HlpTrimChar(str, '\"', HLP_TRIM_BOTH)
 
 bool HlpBeginsWithA(LPCSTR look, LPCSTR find, LONG findLen);
 

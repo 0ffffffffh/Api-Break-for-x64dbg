@@ -12,7 +12,7 @@ using namespace Script::Debug;
 modlist		AbpModuleList;
 ModuleInfo	AbpCurrentMainModule;
 
-
+INTERNAL bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC enumProc);
 INTERNAL int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunctionInfo *afi);
 
 ModuleApiInfo *AbpSearchModuleApiInfo(const char *name)
@@ -179,6 +179,28 @@ duint AbpGetPEDataOfMainModule(duint type, int sectIndex)
 	return AbpGetPEDataOfMainModule2(&mainModule, type, sectIndex);
 }
 
+void AbpDynamicApiEnumHandler(char *module, char *api, duint mod, duint apiAddr, duint apiRva)
+{
+	SymbolInfo sym;
+	ApiFunctionInfo *afi;
+
+	DBGPRINT("Registering dynaload api %s(%p) : %s(%p)", module, mod, api, apiAddr);
+	
+	memset(&sym, 0, sizeof(SymbolInfo));
+	strcpy(sym.mod, module);
+	strcpy(sym.name, api);
+	sym.rva = apiRva;
+	sym.type = Import;
+
+	if (AbpRegisterApi(&sym, &afi))
+	{
+		DBGPRINT("registered!");
+		
+		if (afi->ownerModule->baseAddr == 0)
+			afi->ownerModule->baseAddr = mod;
+	}
+}
+
 INTERNAL_EXPORT bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi)
 {
 	ModuleInfo mainModule;
@@ -222,6 +244,7 @@ void AbGetDebuggingProcessName(char *buffer)
 	GetMainModuleName(buffer);
 }
 
+
 bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 {
 	ListInfo moduleList = { 0 };
@@ -233,9 +256,12 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 	SymbolInfo *sym = NULL;
 	ModuleApiInfo *mai = NULL;
 	ApiFunctionInfo *afi = NULL;
-
+	
 	if (!AbpNeedsReloadModuleAPIs())
 		return true;
+
+	//First, detect dynamically loaded apis. 
+	//And mark the loaded api export as an imported by exe
 
 	if (Script::Module::GetList(&moduleList))
 	{
@@ -261,14 +287,19 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 		{
 			if (sym->type == Import && HlpEndsWithA(sym->mod, ".exe", 4))
 			{
+				//Executables provides psoude module import data
+				//for now we reserve api registration slot
 				if (AbpRegisterApi(sym, &afi))
 					mai = afi->ownerModule;
 				
 			}
 			else if (sym->type == Export && !HlpEndsWithA(sym->mod,".exe",4))
 			{
+				//Ok. we walkin on the real export modules now.
+				//try to get AFI if there is exist a reserved for psoude import data
 				afi = AbpSearchApiFunctionInfo(mai, sym->name);
 
+				//If exist make a real registration for exist slot
 				if (afi != NULL)
 					AbpRegisterApi(sym, NULL);
 			}
@@ -292,8 +323,8 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 	success = true;
 
 	GetMainModuleInfo(&AbpCurrentMainModule);
-
-	//AbpDetectAPIsUsingByGetProcAddress();
+	
+	AbiDetectAPIsUsingByGetProcAddress(AbpDynamicApiEnumHandler);
 
 cleanAndExit:
 

@@ -64,34 +64,38 @@ LPSTR HlpWideToAnsiString(LPCWSTR str)
 	return NULL;
 }
 
-void  HlpRemoveQuotations(LPSTR str)
+void  HlpTrimChar(LPSTR str, CHAR chr, int option)
 {
 	char *p;
 	int len;
-	bool hasEndQuote;
+	bool hasEndChr = false;
 
 	if (!str)
+		return;
+
+	if (!option)
 		return;
 
 	p = (char *)str;
 	len = (int)strlen(str);
 
-	hasEndQuote = *(p + (len - 1)) == '\"';
+	if (option & HLP_TRIM_RIGHT)
+		hasEndChr = *(p + (len - 1)) == chr;
 
-	if (*p == '\"')
+	if (*p == chr && (option & HLP_TRIM_LEFT))
 	{
-		len -= hasEndQuote ? 2 : 1;
+		len -= hasEndChr ? 2 : 1;
 
 		memmove(p, p + 1, len);
 
 		*(p + len) = 0;
 	}
-	else if (hasEndQuote)
+	else if (hasEndChr)
 	{
 		*(p + (len - 1)) = 0;
 	}
-
 }
+
 
 bool HlpBeginsWithA(LPCSTR look, LPCSTR find, LONG findLen)
 {

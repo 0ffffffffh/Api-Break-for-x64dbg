@@ -25,7 +25,7 @@
 
 #define AB_VERSION_MAJOR 0
 #define AB_VERSION_MINOR 3
-#define AB_VERSION_BUILD 15
+#define AB_VERSION_BUILD 16
 
 #define AB_PHASE		"BETA"
 
