@@ -12,6 +12,9 @@
 #define DBGPRINT(s,...) HlpDebugPrint("ApiBreak: " s "\n",##__VA_ARGS__)
 
 
+#define NOTIMPLEMENTED() HlpDebugPrint(__FUNCTION__ " not implemented yet")
+
+
 #define ALLOCOBJECT(type) (type *)AbMemoryAlloc(sizeof(type))
 #define FREEOBJECT(ob) AbMemoryFree(ob)
 

@@ -179,7 +179,9 @@
     <ClInclude Include="src\incl\apibreak.h" />
     <ClInclude Include="src\incl\corelib.h" />
     <ClInclude Include="src\incl\defs.h" />
+    <ClInclude Include="src\incl\dlgs\SettingsForm.hpp" />
     <ClInclude Include="src\incl\hlp.h" />
+    <ClInclude Include="src\incl\settings.h" />
     <ClInclude Include="src\incl\ui\ctrl\uicheckbox.hpp" />
     <ClInclude Include="src\incl\ui\ctrl\uicombobox.hpp" />
     <ClInclude Include="src\incl\ui\ctrl\uicontrolbase.hpp" />
@@ -192,6 +194,7 @@
     <ClCompile Include="src\dynapidetect.cpp" />
     <ClCompile Include="src\hlprs.cpp" />
     <ClCompile Include="src\plugin.cpp" />
+    <ClCompile Include="src\settings.cpp" />
     <ClCompile Include="src\syslib.cpp" />
     <ClCompile Include="src\ui\ui.cpp" />
   </ItemGroup>

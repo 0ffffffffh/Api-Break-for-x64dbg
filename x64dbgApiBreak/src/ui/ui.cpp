@@ -314,6 +314,8 @@ BOOL IntUiCreateDialog(UIOBJECT *uiObj)
 			while (!UiStepTraceEnd)
 				Sleep(1);
 		}
+		else
+			__debugbreak();
 #else
 		__debugbreak();
 #endif
@@ -344,10 +346,14 @@ UIOBJECT *UiCreateDialog(
 	UINT dialogResourceId,
 	BOOL seperateThread,
 	PVOID param,
-	WINDOWCREATIONINFO *wci)
+	WINDOWCREATIONINFO *wci,
+	BOOL *wasSucceeded)
 {
 	UIOBJECT *uiObject = NULL;
 	INTPARAM *internParam;
+
+	if (!wasSucceeded)
+		return NULL;
 
 	uiObject = ALLOCOBJECT(UIOBJECT);
 	uiObject->dlgResourceId = dialogResourceId;
@@ -365,10 +371,20 @@ UIOBJECT *UiCreateDialog(
 
 	if (IntUiCreateDialog(uiObject) == FALSE)
 	{
-		FREEOBJECT(uiObject);
+		if (!seperateThread)
+			*wasSucceeded = FALSE;
+
+		UiReleaseObject(uiObject);
 		return NULL;
 	}
-	
+
+	if (!uiObject->seperateThread)
+	{
+		*wasSucceeded = TRUE;
+		UiReleaseObject(uiObject);
+		return NULL;
+	}
+
 	return uiObject;
 }
 
@@ -378,12 +394,14 @@ void UiReleaseObject(UIOBJECT *ui)
 	if (!ui)
 		return;
 
+	RtlZeroMemory(ui, sizeof(UIOBJECT));
 	FREEOBJECT(ui);
 }
 
 BOOL UiDestroyDialog(UIOBJECT *ui)
 {
 	HANDLE uiThread = NULL;
+	BOOL success;
 
 	//Who called?
 	if (ui->isUiOutside)
@@ -396,15 +414,19 @@ BOOL UiDestroyDialog(UIOBJECT *ui)
 
 		//Hmm. This function called from outside of UIMgr
 		//Post close message and wait WM_DESTROY
-		PostMessage(ui->hwnd, WM_CLOSE, 0, 0);
+		success = PostMessage(ui->hwnd, WM_CLOSE, 0, 0);
 	}
 	//else, the destroy message already initiated.
 
 	//block until ui thread exited
 	if (uiThread != NULL &&  uiThread != ((HANDLE)-2))
+	{
 		WaitForSingleObject(uiThread, INFINITE);
 
-	return ui->isRunning;
+		success = TRUE;
+	}
+
+	return success;
 }
 
 void UiForceCloseAllActiveWindows()

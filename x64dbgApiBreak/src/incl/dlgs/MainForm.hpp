@@ -18,11 +18,11 @@ private:
 
 	void ToggleTracebackState()
 	{
-		bool checked = (bool)chkUseXref->SendMsg(BM_GETCHECK, NULL, NULL);
+		bool checked = (bool)chkUseXref->SendControlMsg(BM_GETCHECK, NULL, NULL);
 
 		if (checked)
 		{
-			chkTraceBack->SendMsg(BM_SETCHECK, BST_UNCHECKED, NULL);
+			chkTraceBack->SendControlMsg(BM_SETCHECK, BST_UNCHECKED, NULL);
 			chkTraceBack->Disable();
 		}
 		else
@@ -53,8 +53,8 @@ private:
 		GetControlTextA(IDC_CBAPIFUNC, funcName, sizeof(funcName));
 		GetControlTextA(IDC_CBMODULELIST, moduleName, sizeof(moduleName));
 
-		bpOnXrefs = (bool)chkUseXref->SendMsg(BM_GETCHECK, NULL, NULL);
-		traceBack = (bool)chkTraceBack->SendMsg(BM_GETCHECK, NULL, NULL);
+		bpOnXrefs = (bool)chkUseXref->SendControlMsg(BM_GETCHECK, NULL, NULL);
+		traceBack = (bool)chkTraceBack->SendControlMsg(BM_GETCHECK, NULL, NULL);
 
 		if (!HlpPrintFormatBufferA(&buffer, "Going to set a BP at %s!%s\r\nis that ok?", moduleName, funcName))
 		{

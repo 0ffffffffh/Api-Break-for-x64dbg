@@ -38,7 +38,7 @@ public:
 		this->ctrlHwnd = GetDlgItem(this->ui->hwnd, this->ctrlId);
 	}
 
-	LONG SendMsg(UINT msg, WPARAM wp, LPARAM lp)
+	LONG SendControlMsg(UINT msg, WPARAM wp, LPARAM lp)
 	{
 		return (LONG)::SendMessage(this->ctrlHwnd, msg, wp, lp);
 	}

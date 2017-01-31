@@ -3,6 +3,7 @@
 #include <pluginsdk/_scriptapi_symbol.h>
 #include <pluginsdk/_scriptapi_debug.h>
 #include <pluginsdk/bridgemain.h>
+#include <settings.h>
 
 using namespace Script::Module;
 using namespace Script::Symbol;
@@ -324,7 +325,10 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 
 	GetMainModuleInfo(&AbpCurrentMainModule);
 	
-	AbiDetectAPIsUsingByGetProcAddress(AbpDynamicApiEnumHandler);
+	if (AbGetSettings()->exposeDynamicApiLoads)
+		AbiDetectAPIsUsingByGetProcAddress(AbpDynamicApiEnumHandler);
+	else
+		DBGPRINT("dynamic api detection disabled!");
 
 cleanAndExit:
 

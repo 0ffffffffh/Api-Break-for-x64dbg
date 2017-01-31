@@ -12,9 +12,14 @@ public:
 	{
 	}
 
-	bool IsChecked()
+	bool GetState()
 	{
+		return (bool)SendControlMsg(BM_GETCHECK, NULL, NULL);
+	}
 
+	void SetState(bool state)
+	{
+		SendControlMsg(BM_SETCHECK, state ? BST_CHECKED : BST_UNCHECKED, NULL);
 	}
 
 	virtual void OnCommand(WPARAM wp)

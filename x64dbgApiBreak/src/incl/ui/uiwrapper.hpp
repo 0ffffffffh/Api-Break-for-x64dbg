@@ -156,13 +156,19 @@ public:
 
 	virtual bool ShowDialog(bool seperateUiThread)
 	{
+		BOOL succeeded;
+
 		this->uiObject = UiCreateDialog(
 			(UIDLGPROC)this->DialogProc,
 			NULL,
 			this->dlgId,
 			(BOOL)seperateUiThread,
 			this,
-			&this->wci);
+			&this->wci,
+			&succeeded);
+
+		if (!seperateUiThread)
+			return (bool)succeeded;
 
 		return this->uiObject != NULL;
 	}
@@ -212,8 +218,11 @@ public:
 	{
 		if (UiDestroyDialog(this->uiObject))
 		{
-			UiReleaseObject(this->uiObject);
-			this->uiObject = NULL;
+			if (this->uiObject->seperateThread)
+			{
+				UiReleaseObject(this->uiObject);
+				this->uiObject = NULL;
+			}
 		}
 	}
 

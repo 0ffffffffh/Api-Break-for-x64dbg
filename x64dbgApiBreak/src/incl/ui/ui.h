@@ -63,7 +63,8 @@ UIOBJECT *UiCreateDialog(
 	UINT dialogResourceId,
 	BOOL seperateThread,
 	PVOID param,
-	WINDOWCREATIONINFO *wci);
+	WINDOWCREATIONINFO *wci,
+	BOOL *wasSucceeded);
 
 void UiReleaseObject(UIOBJECT *ui);
 

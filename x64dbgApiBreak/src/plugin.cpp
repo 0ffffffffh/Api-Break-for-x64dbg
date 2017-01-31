@@ -1,10 +1,14 @@
 #include <corelib.h>
+#include <settings.h>
 #include <dlgs/MainForm.hpp>
+#include <dlgs/SettingsForm.hpp>
 
-#define MN_BASE				0xFA00FA
+#define MN_BASE					0xFA00FA
 
-#define MN_ABOUT			MN_BASE
-#define MN_SHOWMAINFORM		MN_ABOUT + 1
+#define MN_ABOUT				MN_BASE
+#define MN_SHOWMAINFORM			MN_BASE + 1
+#define MN_SHOWSETTINGSFORM		MN_BASE + 2
+
 
 INTERNAL int		AbPluginHandle;
 INTERNAL HWND		AbHwndDlgHandle;
@@ -51,6 +55,7 @@ void AbpDestroyBpCallbacks()
 void AbpInitMenu()
 {
 	_plugin_menuaddentry(AbMenuHandle, MN_SHOWMAINFORM, "set an API breakpoint");
+	_plugin_menuaddentry(AbMenuHandle, MN_SHOWSETTINGSFORM, "settings");
 	_plugin_menuaddentry(AbMenuHandle, MN_ABOUT, "about?");
 	
 }
@@ -61,6 +66,9 @@ DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
 	initStruct->pluginVersion = MAKEWORD(AB_VERSION_MAJOR, AB_VERSION_MINOR);
 	strcpy_s(initStruct->pluginName, 256, "Api Break");
 	AbPluginHandle = initStruct->pluginHandle;
+
+	AbSettingsLoad();
+
 	return true;
 }
 
@@ -125,6 +133,11 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 		//Ps. MainForm automatically deletes itself when the window closed.
 		MainForm *mainForm = new MainForm();
 		mainForm->ShowDialog();
+	}
+	else if (info->hEntry == MN_SHOWSETTINGSFORM)
+	{
+		SettingsForm *settingsForm = new SettingsForm();
+		settingsForm->ShowDialog();
 	}
 }
 
