@@ -9,6 +9,15 @@ using namespace std;
 #define SWP_FLAG_ONLY_RESIZE (SWP_NOMOVE | SWP_NOREPOSITION | SWP_NOZORDER)
 #define SWP_FLAG_RESIZE_AND_MOVE (SWP_NOREPOSITION | SWP_NOZORDER)
 
+#define PSEUDO_HANDLE_VALUE ((HANDLE)((ULONG_PTR)-2))
+
+#if _DEBUG
+#define UITHREAD_WAIT_TIME INFINITE
+#else
+#define UITHREAD_WAIT_TIME 10 * 1000
+#endif
+
+
 #ifdef _DEBUG
 volatile UCHAR UiStepTraceEnd = 0;
 #endif
@@ -95,6 +104,34 @@ void __UiRaiseDisposeCallback(UIOBJECT *ui)
 		ui->uiDisposer();
 }
 
+BOOL UipWaitUiThreadUntilExit(HANDLE thread)
+{
+	HANDLE realHandle;
+	DWORD val;
+
+	if (thread == PSEUDO_HANDLE_VALUE)
+	{
+		//If thread has pseudo handle. We must convert 
+		//to real handle using DuplicateHandle
+		if (!DuplicateHandle(
+			GetCurrentProcess(),
+			thread,
+			GetCurrentProcess(), &realHandle, 0, FALSE, DUPLICATE_SAME_ACCESS)
+			)
+		{
+			return FALSE;
+		}
+	}
+	else
+		realHandle = thread;
+
+	if (WaitForSingleObject(realHandle, UITHREAD_WAIT_TIME) == WAIT_OBJECT_0)
+		CloseHandle(realHandle);
+	//else, the ui thread is also using for another job.
+
+	return TRUE;
+}
+
 INT_PTR CALLBACK _UiMainWndProc(HWND hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	INITCOMMONCONTROLSEX icc;
@@ -137,6 +174,7 @@ INT_PTR CALLBACK _UiMainWndProc(HWND hwnd, UINT Msg, WPARAM wParam, LPARAM lPara
 	{
 		uiObject->isUiOutside = FALSE;
 		PostQuitMessage(0);
+		return 0;
 	}
 	break;
 	default:
@@ -274,9 +312,17 @@ DWORD WINAPI IntUiWorker(VOID *Arg)
 
 	uiObj->isRunning = FALSE;
 
+	//Post fake WM_QUIT message
+	uiObj->dlgProc(uiObj->hwnd, WM_QUIT, 0, 0, _UiDecodeParamPointer(uiObj->param));
+
 	__UiUnmapHwnd(uiObj->hwnd);
 
 	__UiRaiseDisposeCallback(uiObj);
+
+	if (uiObj->seperateThread)
+	{
+		UiReleaseObject(uiObj);
+	}
 
 	return 0;
 }
@@ -398,6 +444,8 @@ void UiReleaseObject(UIOBJECT *ui)
 	FREEOBJECT(ui);
 }
 
+
+
 BOOL UiDestroyDialog(UIOBJECT *ui)
 {
 	HANDLE uiThread = NULL;
@@ -418,12 +466,9 @@ BOOL UiDestroyDialog(UIOBJECT *ui)
 	}
 	//else, the destroy message already initiated.
 
-	//block until ui thread exited
-	if (uiThread != NULL &&  uiThread != ((HANDLE)-2))
+	if (uiThread != NULL)
 	{
-		WaitForSingleObject(uiThread, INFINITE);
-
-		success = TRUE;
+		success = UipWaitUiThreadUntilExit(uiThread);
 	}
 
 	return success;

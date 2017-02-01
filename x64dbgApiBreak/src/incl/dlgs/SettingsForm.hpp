@@ -56,7 +56,6 @@ public:
 		case IDC_BTNDISCARDSETTINGS:
 			Close();
 			break;
-		break;
 		}
 
 		UiWrapper::OnCommand(wp, lp);
@@ -64,7 +63,7 @@ public:
 
 	void OnInit()
 	{
-		SetWindowTitle(L"Api Break - BETA");
+		SetWindowTitleA(AB_APPTITLE);
 
 		this->chkDetectDynLdr = GetControlById<UiCheckBox>(IDC_CHKDETECTDYNLDR);
 		
@@ -74,7 +73,7 @@ public:
 
 	bool ShowDialog()
 	{
-		return UiWrapper::ShowDialog(false);
+		return UiWrapper::ShowDialog(true);
 	}
 };
 

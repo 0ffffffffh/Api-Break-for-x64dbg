@@ -100,7 +100,7 @@ bool AbSettingsLoad()
 
 bool AbSettingsSave()
 {
-	if (!STNG_SAVE(ABS_EXPOSEDYNLDR, &AbpSettings.exposeDynamicApiLoads))
+	if (!STNG_SAVE(ABS_EXPOSEDYNLDR, AbpSettings.exposeDynamicApiLoads))
 		return false;
 
 	return true;

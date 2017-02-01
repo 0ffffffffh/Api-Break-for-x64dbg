@@ -28,11 +28,20 @@
 
 #define AB_VERSION_MAJOR 0
 #define AB_VERSION_MINOR 3
-#define AB_VERSION_BUILD 16
+#define AB_VERSION_BUILD 18
+
+#if _WIN64
+#define AB_PLATFORM		"x64"
+#else
+#define AB_PLATFORM		"x86"
+#endif
 
 #define AB_PHASE		"BETA"
 
 #define AB_APPNAME		"Api Break (" AB_PHASE ")"
+#define AB_APPTITLE		AB_APPNAME " - " AB_PLATFORM
+
+
 
 #define AB_VERSION_STRING(maj,min,build) _stringfy(maj) "." _stringfy(min) " Build: " _stringfy(build)
 

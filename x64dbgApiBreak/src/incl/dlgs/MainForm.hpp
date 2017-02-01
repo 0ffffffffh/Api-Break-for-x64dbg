@@ -237,7 +237,7 @@ public :
 
 	void OnInit()
 	{
-		SetWindowTitle(L"Api Break - BETA");
+		SetWindowTitleA(AB_APPTITLE);
 
 		this->cbModules = GetControlById<UiComboBox>(IDC_CBMODULELIST);
 		this->cbApis = GetControlById<UiComboBox>(IDC_CBAPIFUNC);

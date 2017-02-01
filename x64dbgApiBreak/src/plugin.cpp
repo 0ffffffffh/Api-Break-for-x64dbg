@@ -125,7 +125,7 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 			"build on: " AB_BUILD_TIME "\r\n\r\n"
 			"by oguz (ozzy) kartal (2017)\r\n\r\n"
 			"http://oguzkartal.net ;)",
-			"about", 
+			"About - " AB_APPTITLE, 
 			MB_ICONINFORMATION);
 	}
 	else if (info->hEntry == MN_SHOWMAINFORM)

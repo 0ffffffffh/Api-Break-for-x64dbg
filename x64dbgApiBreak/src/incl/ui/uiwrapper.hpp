@@ -37,6 +37,9 @@ private:
 		case WM_CLOSE:
 			_this->OnClose();
 			break;
+		case WM_QUIT:
+			_this->OnDestroyed();
+			break;
 		}
 
 
@@ -88,7 +91,7 @@ private:
 
 	bool SetControlEnableState(ULONG ctrlId, bool state)
 	{
-		HWND ctrlHwnd = GetDlgItem(this->uiObject->hwnd, ctrlId);
+		HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
 
 		if (!ctrlHwnd)
 			return false;
@@ -134,14 +137,14 @@ public:
 
 	~UiWrapper(void)
 	{
+		DestroyControlResources();
+		CloseHandle(this->initCompletedEvent);
+
 		if (!this->killingSelf)
 		{
 			if (UiIsRunning(this->uiObject))
 				Close();
 		}
-
-		DestroyControlResources();
-		CloseHandle(this->initCompletedEvent);
 	}
 
 	static void DestroyAllActiveWindows()
@@ -180,18 +183,18 @@ public:
 
 	bool SetTimer(LONG timerId, ULONG period)
 	{
-		return ::SetTimer(this->uiObject->hwnd, (UINT_PTR)timerId, (UINT)period, NULL)
+		return ::SetTimer(GetHWND(), (UINT_PTR)timerId, (UINT)period, NULL)
 			== timerId;
 	}
 
 	void KillTimer(LONG timerId)
 	{
-		::KillTimer(this->uiObject->hwnd, (UINT_PTR)timerId);
+		::KillTimer(GetHWND(), (UINT_PTR)timerId);
 	}
 
 	LONG MessageBox(LPWSTR msg, LPWSTR title, ULONG flags)
 	{
-		return ::MessageBoxW(this->uiObject->hwnd, (LPCWSTR)msg, (LPCWSTR)title, flags);
+		return ::MessageBoxW(GetHWND(), (LPCWSTR)msg, (LPCWSTR)title, flags);
 	}
 
 	LONG MsgBoxInfo(LPCSTR msg, LPCSTR title)
@@ -218,11 +221,7 @@ public:
 	{
 		if (UiDestroyDialog(this->uiObject))
 		{
-			if (this->uiObject->seperateThread)
-			{
-				UiReleaseObject(this->uiObject);
-				this->uiObject = NULL;
-			}
+			this->uiObject = NULL;
 		}
 	}
 
@@ -255,7 +254,7 @@ public:
 
 	ULONG GetControlText(ULONG ctrlId, LPWSTR strBuf, ULONG bufSize)
 	{
-		HWND ctrlHwnd = GetDlgItem(this->uiObject->hwnd, ctrlId);
+		HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
 
 		if (!ctrlHwnd)
 			return 0;
@@ -263,9 +262,14 @@ public:
 		return GetWindowTextW(ctrlHwnd, (LPWSTR)strBuf, bufSize);
 	}
 
-	void SetWindowTitle(LPWSTR title)
+	void SetWindowTitleW(LPWSTR title)
 	{
-		SetWindowTextW(this->uiObject->hwnd, title);
+		SetWindowTextW(GetHWND(), title);
+	}
+
+	void SetWindowTitleA(LPSTR title)
+	{
+		SetWindowTextA(GetHWND(),title);
 	}
 
 	bool SetControlTextA(ULONG ctrlId, LPSTR str)
@@ -284,7 +288,7 @@ public:
 
 	bool SetControlText(ULONG ctrlId, LPWSTR str)
 	{
-		HWND ctrlHwnd = GetDlgItem(this->uiObject->hwnd, ctrlId);
+		HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
 
 		if (!ctrlHwnd)
 			return false;
@@ -328,7 +332,7 @@ public:
 		HWND ctrlHwnd;
 		T *ctrl = NULL;
 		
-		ctrlHwnd = GetDlgItem(this->uiObject->hwnd, ctrlId);
+		ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
 
 		
 		if ((ctrl = (T *)LookupControl(ctrlHwnd)) != NULL)
@@ -349,11 +353,14 @@ public:
 
 	}
 
+	virtual void OnDestroyed()
+	{
+		delete this;
+	}
+
 	virtual void OnClose()
 	{
 		this->killingSelf = true;
-
-		delete this;
 	}
 
 	virtual void OnPaint()
