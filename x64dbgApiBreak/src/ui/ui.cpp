@@ -107,7 +107,6 @@ void __UiRaiseDisposeCallback(UIOBJECT *ui)
 BOOL UipWaitUiThreadUntilExit(HANDLE thread)
 {
 	HANDLE realHandle;
-	DWORD val;
 
 	if (thread == PSEUDO_HANDLE_VALUE)
 	{

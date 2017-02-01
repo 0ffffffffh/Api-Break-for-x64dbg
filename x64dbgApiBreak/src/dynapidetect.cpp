@@ -115,7 +115,7 @@ const char *regs[16]
 };
 
 CachedInst	AbpCachedDisasmedInstructions[ABP_CACHED_DISASM_SIZE];
-duint		AbpDisasmedCacheIndex = 0;
+int			AbpDisasmedCacheIndex = 0;
 
 CachedInst *AbpGetCachedInst(int index)
 {
@@ -295,7 +295,7 @@ bool AbpReadStringFromInstructionSourceAddress(BASIC_INSTRUCTION_INFO *inst, cha
 
 	if (!DbgGetStringAt(addr, nameBuf))
 	{
-		DBGPRINT("String read error from memory");
+		DBGPRINT("String read error from 0x%p",addr);
 		return false;
 	}
 
@@ -358,6 +358,8 @@ bool AbpGetApiStringFromProcLoader(short argNumber, char *nameBuf)
 						{
 							if (AbpReadStringFromInstructionSourceAddress(&inst->inst, nameBuf))
 								return true;
+
+							return false;
 						}
 					}
 					break;
@@ -376,6 +378,8 @@ bool AbpGetApiStringFromProcLoader(short argNumber, char *nameBuf)
 							{
 								if (AbpReadStringFromInstructionSourceAddress(&inst->inst, nameBuf))
 									return true;
+
+								return false;
 							}
 						}
 					}
@@ -386,6 +390,8 @@ bool AbpGetApiStringFromProcLoader(short argNumber, char *nameBuf)
 						{
 							if (AbpReadStringFromInstructionSourceAddress(&inst->inst, nameBuf))
 								return true;
+
+							return false;
 						}
 						else
 							argNumber--;
@@ -425,7 +431,7 @@ bool AbpIsAPICall2(duint code, ApiFunctionInfo *afi, BASIC_INSTRUCTION_INFO *ins
 
 		if (callAddr == afi->ownerModule->baseAddr + afi->rva)
 		{
-			DBGPRINT("'%s' call found at %p",afi->name, callAddr);
+			DBGPRINT("'%s' call found at %p for the %s",afi->name, code,afi->name);
 			return true;
 		}
 	}
@@ -445,15 +451,16 @@ bool AbpIsAPICall(duint code, ApiFunctionInfo *afi, BASIC_INSTRUCTION_INFO *inst
 
 bool AbpIsLoadLibraryXXXCall(ApiFunctionInfo **afiList, int afiCount,duint codeAddr, BASIC_INSTRUCTION_INFO *inst, bool cacheInstruction)
 {
-	bool mustCache = false;
-
 	for (int i = 0;i < afiCount;i++)
 	{
-		mustCache = cacheInstruction && i == 0;
-
-		if (AbpIsAPICall2(codeAddr, afiList[i], inst, mustCache))
+		if (AbpIsAPICall2(codeAddr, afiList[i], inst, false))
+		{
 			return true;
+		}
 	}
+
+	if (cacheInstruction)
+		AbpCacheInstruction(codeAddr, inst);
 
 	return false;
 }
@@ -522,7 +529,7 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC en
 	ApiFunctionInfo *procafi=NULL;
 	ApiFunctionInfo *libafis[4] = { 0 };
 	int ldrVariantCount = 0;
-
+	bool skip;
 	duint code, end;
 
 	char moduleName[128], apiFuncName[128];
@@ -550,10 +557,17 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC en
 
 		if (AbpIsLoadLibraryXXXCall(libafis,ldrVariantCount,code,&inst,true))
 		{
-			AbpExposeStringArgument(1, moduleName);
+			memset(moduleName, 0, sizeof(moduleName));
+
+			skip = !AbpExposeStringArgument(1, moduleName);
 
 			AbpEmptyInstructionCache();
 
+			if (skip)
+			{
+				NEXT_INSTR_ADDR(&code, &inst);
+				continue;
+			}
 
 			while (1)
 			{
