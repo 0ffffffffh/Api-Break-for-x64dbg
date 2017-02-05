@@ -1,13 +1,27 @@
 #include <corelib.h>
+#include <settings.h>
+#include <unordered_map>
 #include <pluginsdk/_scriptapi_module.h>
 #include <pluginsdk/_scriptapi_misc.h>
 
 using namespace Script::Module;
 using namespace Script::Misc;
+using namespace std;
 
 INTERNAL ApiFunctionInfo *AbiGetAfi(const char *module, const char *afiName);
 INTERNAL bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi);
+INTERNAL bool AbiRegisterDynamicApi(const char *module, const char *api, duint mod, duint apiAddr, duint apiRva);
 
+#define ALIGNTO_PAGE(x) ( ((x)/0x1000+1) * 0x1000 )
+
+
+typedef  unordered_map<string, vector<char *> *> ondemand_api_list;
+
+HANDLE				AbpDeferListSyncMutant;
+ondemand_api_list	AbpDeferList;
+
+#define SYNCH_BEGIN		WaitForSingleObject(AbpDeferListSyncMutant,INFINITE)
+#define SYNCH_END		ReleaseMutex(AbpDeferListSyncMutant)
 
 
 /*
@@ -157,7 +171,38 @@ void AbpCacheInstruction(duint addr, BASIC_INSTRUCTION_INFO *inst)
 	slot->addr = addr;
 }
 
+bool AbpRegisterDeferredAPIRegistration(const char *module, const char *api)
+{
+	string smod(module);
+	ondemand_api_list::iterator it;
+	vector<char *> *apiList;
+	char *apiString;
 
+	it = AbpDeferList.find(smod);
+
+	if (it == AbpDeferList.end())
+	{
+		apiList = new vector<char *>();
+
+		SYNCH_BEGIN;
+
+		AbpDeferList.insert({ smod,apiList });
+
+		SYNCH_END;
+
+	}
+	else
+		apiList = it->second;
+
+	apiString = HlpCloneStringA((LPSTR)api);
+
+	if (!apiString)
+		return false;
+
+	apiList->push_back(apiString);
+
+	return true;
+}
 
 bool AbpParseRegister(char *regstr, LoadInstInfo *linst)
 {
@@ -290,8 +335,11 @@ bool AbpReadStringFromInstructionSourceAddress(BASIC_INSTRUCTION_INFO *inst, cha
 {
 	duint addr = AbpGetActualDataAddress(inst);
 
-	if (!addr)
+	if (!addr || addr < 0x1000)
+	{
+		DBGPRINT("String memory not valid!");
 		return false;
+	}
 
 	if (!DbgGetStringAt(addr, nameBuf))
 	{
@@ -411,6 +459,113 @@ bool AbpExposeStringArgument(short argNumber, char *buf)
 	return AbpGetApiStringFromProcLoader(argNumber, buf);
 }
 
+bool AbpIsValidApi(const char *module, const char *function)
+{
+	PBYTE mod = NULL;
+	PIMAGE_NT_HEADERS ntHdr;
+	PIMAGE_DOS_HEADER dosHdr;
+	PIMAGE_EXPORT_DIRECTORY ped;
+	DWORD moduleSize, exportTableVa;
+	HANDLE moduleFile, mapping;
+	char *exportName;
+	ULONG *addressOfNameStrings;
+	duint imageBase;
+
+	bool valid = false;
+	char path[MAX_PATH];
+	int pathLen;
+
+	pathLen = GetSystemDirectoryA(path, MAX_PATH);
+
+	if (!pathLen)
+		return false;
+
+
+	for (bool secondChance = true;;)
+	{
+		sprintf(path + pathLen, "\\%s", module);
+
+		moduleFile = CreateFileA(
+			path,
+			GENERIC_READ,
+			FILE_SHARE_READ,
+			NULL,
+			OPEN_EXISTING,
+			FILE_ATTRIBUTE_NORMAL,
+			NULL
+		);
+
+		if (!secondChance || moduleFile != INVALID_HANDLE_VALUE)
+			break;
+
+		if (moduleFile == INVALID_HANDLE_VALUE)
+		{
+			pathLen = GetWindowsDirectoryA(path, MAX_PATH);
+			secondChance = false;
+		}
+	}
+
+	if (moduleFile == INVALID_HANDLE_VALUE)
+		return false;
+
+	moduleSize = GetFileSize(moduleFile, NULL);
+
+	mapping = CreateFileMappingA(moduleFile, NULL, PAGE_READONLY | SEC_IMAGE_NO_EXECUTE, 0, ALIGNTO_PAGE(moduleSize), NULL);
+
+	if (!mapping)
+	{
+		CloseHandle(moduleFile);
+		return false;
+	}
+
+	mod = (PBYTE)MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, (SIZE_T)moduleSize);
+
+	if (!mod)
+	{
+		CloseHandle(mapping);
+		CloseHandle(moduleFile);
+		return false;
+	}
+
+	dosHdr = (PIMAGE_DOS_HEADER)mod;
+
+	if (dosHdr->e_magic != IMAGE_DOS_SIGNATURE)
+		goto fail;
+
+	ntHdr = (PIMAGE_NT_HEADERS)(mod + dosHdr->e_lfanew);
+
+	if (ntHdr->Signature != IMAGE_NT_SIGNATURE)
+		goto fail;
+
+	imageBase = ntHdr->OptionalHeader.ImageBase;
+
+	if (imageBase != (duint)mod)
+		imageBase = (duint)mod;
+
+	exportTableVa = ntHdr->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+	ped = (PIMAGE_EXPORT_DIRECTORY)(exportTableVa + imageBase);
+	addressOfNameStrings = (ULONG *)(ped->AddressOfNames + imageBase);
+	
+	for (int i = 0;i < ped->NumberOfNames;i++)
+	{
+		exportName = (char *)(imageBase + addressOfNameStrings[i]);
+
+		if (!strcmp(exportName, function))
+		{
+			valid = true;
+			break;
+		}
+	}
+
+fail:
+
+	UnmapViewOfFile(mod);
+	CloseHandle(mapping);
+	CloseHandle(moduleFile);
+
+	return valid;
+}
+
 bool AbpIsAPICall2(duint code, ApiFunctionInfo *afi, BASIC_INSTRUCTION_INFO *inst, bool cacheInstruction)
 {
 	duint callAddr;
@@ -431,7 +586,7 @@ bool AbpIsAPICall2(duint code, ApiFunctionInfo *afi, BASIC_INSTRUCTION_INFO *ins
 
 		if (callAddr == afi->ownerModule->baseAddr + afi->rva)
 		{
-			DBGPRINT("'%s' call found at %p for the %s",afi->name, code,afi->name);
+			DBGPRINT("'%s' call found at %p",afi->name, code);
 			return true;
 		}
 	}
@@ -465,83 +620,115 @@ bool AbpIsLoadLibraryXXXCall(ApiFunctionInfo **afiList, int afiCount,duint codeA
 	return false;
 }
 
-bool AbpLoadRemoteLibrary(char *module, char *api, DYNAMIC_API_ENUM_PROC enumCb)
+
+
+bool AbpRegisterAPI(char *module, char *api)
 {
-	char *loadercmd;
-	int loadWait = 10;
-	duint addr,modbase,rva;
+	duint funcAddr, modAddr, rva;
 
-	HlpPrintFormatBufferA(&loadercmd, "loadlib \"%s\"", module);
 
-	if (!DbgCmdExecDirect(loadercmd))
+	funcAddr = RemoteGetProcAddress(module, api);
+
+	//Is module already loaded?
+	if (funcAddr)
 	{
-		FREESTRING(loadercmd);
-		return false;
-	}
+		modAddr = DbgModBaseFromName(module);
+		rva = funcAddr - modAddr;
 
-	/*
-	Ugly hack!
-	We must delay a bit until the library gets loaded.
-
-	The DbgCmdExec|(Direct) are just returns true when
-	the command executed successfuly and its not wait for
-	library loading completion.
-
-	*/
-	while (loadWait > 0)
-	{
-		addr = RemoteGetProcAddress(module, api);
-
-		if (!addr)
-			Sleep(20);
-		else
-			break;
-
-		loadWait--;
-	}
-
-	FREESTRING(loadercmd);
-
-	if (addr)
-	{
-		modbase = DbgModBaseFromName(module);
-
-		rva = addr - modbase;
-
-		if (enumCb)
-			enumCb(module, api, modbase, addr, rva);
+		AbiRegisterDynamicApi(module, api, modAddr, funcAddr, rva);
 
 		return true;
 	}
-	//If the addr value still zero, the module probably wont be loaded.
 
-	return false;
+	if (!AbpIsValidApi(module, api))
+	{
+		DBGPRINT("Not valid api");
+		return false;
+	}
+
+	return AbpRegisterDeferredAPIRegistration(module, api);
+}
+
+INTERNAL_EXPORT void AbiRaiseOnDemandLoader(const char *dllName, duint base)
+{
+	duint funcAddr;
+	ondemand_api_list::iterator modIter;
+	vector<char *> *apiList;
+
+	DBGPRINT("%s loaded looking for its one of the deferred module",dllName);
+
+	modIter = AbpDeferList.find(string(dllName));
+
+	if (modIter == AbpDeferList.end())
+	{
+		DBGPRINT("No, its not");
+		return;
+	}
+
+	apiList = modIter->second;
+
+	DBGPRINT("Deferred api's are now registering.");
+
+	for (vector<char *>::iterator it = apiList->begin(); it != apiList->end(); it++)
+	{
+		funcAddr = Script::Misc::RemoteGetProcAddress(dllName, *it);
+
+		if (funcAddr > 0)
+		{
+			AbiRegisterDynamicApi(dllName, *it, base,funcAddr,funcAddr-base);
+		}
+	}
+
+	SYNCH_BEGIN;
+	//TODO : Remove loaded modules from list
+	SYNCH_END;
+
+	//REMOVE waiting mod info
 }
 
 //loaderApi can be LoadLibraryA LoadLibraryW LoadLibraryExA LoadLibraryExW
-INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC enumCb)
+INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 {
-	const char *ldrVariants[4] = { "LoadLibraryA","LoadLibraryW","LoadLibraryExA","LoadLibraryExW" };
+	const char *ldrVariants[6] = { 
+		"LoadLibraryA",
+		"LoadLibraryW",
+		"LoadLibraryExA",
+		"LoadLibraryExW",
+		"GetModuleHandleA",
+		"GetModuleHandleW"};
 
 	BASIC_INSTRUCTION_INFO inst;
 
 	ModuleSectionInfo codeSect;
 	ApiFunctionInfo *procafi=NULL;
-	ApiFunctionInfo *libafis[4] = { 0 };
-	int ldrVariantCount = 0;
+	ApiFunctionInfo *libafis[6] = { 0 };
+	int ldrVariantCount = 0,procLdrCount=0;
+	int totalFoundApi = 0;
+
+	int ldrVariantLimit;
 	bool skip;
 	duint code, end;
+
+	DBGPRINT("Threadid: %x", GetCurrentThreadId());
 
 	char moduleName[128], apiFuncName[128];
 	
 	procafi = AbiGetAfi("kernel32.dll", "GetProcAddress");
 
-	for (int i = 0;i < 4;i++)
+	if (AbGetSettings()->includeGetModuleHandle)
+	{
+		DBGPRINT("Included GetModuleHandle(A/W) !");
+		ldrVariantLimit = 6;
+	}
+	else
+		ldrVariantLimit = 4;
+
+	for (int i = 0;i < ldrVariantLimit;i++)
 	{
 		if ((libafis[ldrVariantCount] = AbiGetAfi("kernel32.dll", ldrVariants[i])) != NULL)
 			ldrVariantCount++;
 	}
-
+	
 	if (!ldrVariantCount || !procafi)
 		return false;
 
@@ -550,6 +737,9 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC en
 
 	code = codeSect.addr;
 	end = code + codeSect.size;
+
+	DBGPRINT("Scanning range %p - %p", code, end);
+
 
 	while (code < end)
 	{
@@ -569,6 +759,11 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC en
 				continue;
 			}
 
+			if (!HlpEndsWithA(moduleName, ".dll", FALSE, 4))
+				strcat(moduleName, ".dll");
+
+			procLdrCount = 0;
+
 			while (1)
 			{
 				NEXT_INSTR_ADDR(&code, &inst);
@@ -577,28 +772,49 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC en
 
 				if (!strncmp(inst.instruction, "ret", 3))
 				{
-					DBGPRINT("GetProcAddress is not called after LoadLibraryXXX");
+					if (!procLdrCount)
+						DBGPRINT("GetProcAddress is not called after LoadLibraryXXX");
+					//else its ok. there is no more getprocaddress calls for the module
+
+					DBGPRINT("%d API load found in single module", procLdrCount);
+
+					NEXT_INSTR_ADDR(&code, &inst);
+
 					break;
 				}
 
 				if (AbpIsAPICall(code, procafi, &inst))
 				{
-					AbpExposeStringArgument(2, apiFuncName);
+					memset(apiFuncName, 0, sizeof(apiFuncName));
 
-					DBGPRINT("Found: %s : %s", moduleName, apiFuncName);
+					if (AbpExposeStringArgument(2, apiFuncName))
+					{
+						DBGPRINT("Found: %s : %s", moduleName, apiFuncName);
+						totalFoundApi++;
+						procLdrCount++;
 
-
-					AbpEmptyInstructionCache();
-					NEXT_INSTR_ADDR(&code, &inst);
-
-
-					AbpLoadRemoteLibrary(moduleName, apiFuncName,enumCb);
-
-					break;
+						AbpEmptyInstructionCache();
+#if 1
+						if (!AbpRegisterAPI(moduleName, apiFuncName))
+							DBGPRINT("Not load, not registered or not valid: %s:%s", moduleName, apiFuncName);
+#endif
+					}
+					else
+						DBGPRINT("Fail");
 				}
 				else if (AbpIsLoadLibraryXXXCall(libafis, ldrVariantCount, code, &inst, false))
 				{
-					DBGPRINT("Consecutive loadlibrary calls :/");
+					if (!procLdrCount)
+					{
+						//We dont skip to next instruction address
+						//cuz, It will be our new loadlibrary reference.
+						DBGPRINT("Consecutive loadlibrary calls :/");
+					}
+					else
+					{
+						DBGPRINT("%d API load found in single module", procLdrCount);
+					}
+
 					break;
 				}
 			}
@@ -607,5 +823,19 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC en
 			NEXT_INSTR_ADDR(&code, &inst);
 	}
 
+	DBGPRINT("Success. %d API(s) found!", totalFoundApi);
+
 	return true;
 }
+
+
+INTERNAL_EXPORT void AbiInitDynapi()
+{
+	AbpDeferListSyncMutant = CreateMutexA(NULL, FALSE, NULL);
+}
+
+INTERNAL_EXPORT void AbiUninitDynapi()
+{
+	CloseHandle(AbpDeferListSyncMutant);
+}
+

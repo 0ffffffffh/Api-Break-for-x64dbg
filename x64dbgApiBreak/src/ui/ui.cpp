@@ -448,7 +448,7 @@ void UiReleaseObject(UIOBJECT *ui)
 BOOL UiDestroyDialog(UIOBJECT *ui)
 {
 	HANDLE uiThread = NULL;
-	BOOL success;
+	BOOL success = FALSE;
 
 	//Who called?
 	if (ui->isUiOutside)

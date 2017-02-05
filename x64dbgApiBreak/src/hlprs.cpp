@@ -19,6 +19,25 @@ void HlpDebugPrint(const char *format, ...)
 }
 
 
+LPSTR HlpCloneStringA(LPCSTR str)
+{
+	LPSTR clone;
+	int len;
+
+	if (!str)
+		return NULL;
+
+	len = strlen(str);
+
+	clone = ALLOCSTRINGA(len);
+
+	if (!clone)
+		return NULL;
+
+	memcpy(clone, str, len + 1);
+
+	return clone;
+}
 
 LPWSTR HlpAnsiToWideString(LPCSTR str)
 {
@@ -97,21 +116,30 @@ void  HlpTrimChar(LPSTR str, CHAR chr, int option)
 }
 
 
-bool HlpBeginsWithA(LPCSTR look, LPCSTR find, LONG findLen)
+bool HlpBeginsWithA(LPCSTR look, LPCSTR find,BOOL caseSens, LONG findLen)
 {
+	int lookLen;
 
 	if (!look || !find)
 		return false;
 
 	if (findLen <= 0)
 		return false;
+	
+	lookLen = (int)strlen(look);
 
-	return strstr(look, find) == look;
+	if (lookLen < findLen)
+		return false;
+
+	if (caseSens)
+		return strncmp(look, find, findLen);
+
+	return _strnicmp(look, find, findLen);
 }
 
-bool HlpEndsWithA(LPCSTR look, LPCSTR find, LONG findLen)
+bool HlpEndsWithA(LPCSTR look, LPCSTR find, BOOL caseSens, LONG findLen)
 {
-	LONG lookLen;
+	int lookLen;
 
 	if (!look || !find)
 		return false;
@@ -119,11 +147,17 @@ bool HlpEndsWithA(LPCSTR look, LPCSTR find, LONG findLen)
 	if (findLen <= 0)
 		return false;
 
-	lookLen = (LONG)strlen(look);
+	lookLen = (int)strlen(look);
+
+	if (lookLen < findLen)
+		return false;
 
 	look += lookLen - findLen;
 
-	return strcmp(look, find) == 0;
+	if (caseSens)
+		return strcmp(look, find) == 0;
+
+	return _stricmp(look, find) == 0;
 }
 
 LONG HlpPrintFormatBufferExA(LPSTR *buffer, LPCSTR format, va_list vl)

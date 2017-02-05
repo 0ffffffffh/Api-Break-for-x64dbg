@@ -6,6 +6,7 @@
 typedef struct
 {
 	bool exposeDynamicApiLoads;
+	bool includeGetModuleHandle;
 
 }Settings;
 

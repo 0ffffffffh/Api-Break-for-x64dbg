@@ -18,6 +18,10 @@ INTERNAL int		AbMenuDumpHandle;
 INTERNAL int		AbMenuStackHandle;
 INTERNAL HMODULE	AbPluginModule;
 
+INTERNAL void AbiRaiseOnDemandLoader(const char *dllName, duint base);
+
+INTERNAL void AbiInitDynapi();
+INTERNAL void AbiUninitDynapi();
 
 unordered_map<duint, BpCallbackContext *> AbpBpCallbacks;
 
@@ -68,12 +72,14 @@ DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
 	AbPluginHandle = initStruct->pluginHandle;
 
 	AbSettingsLoad();
+	AbiInitDynapi();
 
 	return true;
 }
 
 DBG_LIBEXPORT bool plugstop()
 {
+	AbiUninitDynapi();
 	AbpDestroyBpCallbacks();
 	AbReleaseResources();
 
@@ -141,6 +147,10 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 	}
 }
 
+DBG_LIBEXPORT void CBLOADDLL(CBTYPE cbType, PLUG_CB_LOADDLL *dllLoad)
+{
+	AbiRaiseOnDemandLoader(dllLoad->modname, (duint)dllLoad->modInfo->BaseOfImage);
+}
 
 DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 {
@@ -148,10 +158,9 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 
 	bpcb = AbpLookupBpCallback(info->breakpoint->addr);
 
-	DBGPRINT("Breakpoint hit: %p", bpcb);
-
 	if (bpcb != NULL)
 	{
+		DBGPRINT("Breakpoint is mine!");
 		bpcb->bp = info->breakpoint;
 		bpcb->callback(bpcb);
 	}

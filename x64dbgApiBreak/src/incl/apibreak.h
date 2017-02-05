@@ -57,8 +57,6 @@ typedef void(*APIMODULE_ENUM_PROC)(LPCSTR,void *);
 
 typedef void(*AB_BREAKPOINT_CALLBACK)(struct __BpCallbackContext *);
 
-typedef void(*DYNAMIC_API_ENUM_PROC)(char *, char *, duint, duint, duint);
-
 typedef struct __BpCallbackContext
 {
 	duint						bpAddr;

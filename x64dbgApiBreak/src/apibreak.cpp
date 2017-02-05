@@ -13,7 +13,7 @@ using namespace Script::Debug;
 modlist		AbpModuleList;
 ModuleInfo	AbpCurrentMainModule;
 
-INTERNAL bool AbiDetectAPIsUsingByGetProcAddress(DYNAMIC_API_ENUM_PROC enumProc);
+INTERNAL bool AbiDetectAPIsUsingByGetProcAddress();
 INTERNAL int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunctionInfo *afi);
 
 ModuleApiInfo *AbpSearchModuleApiInfo(const char *name)
@@ -105,6 +105,8 @@ bool AbpRegisterApi(SymbolInfo *sym, ApiFunctionInfo **pafi)
 	ModuleApiInfo *mai = NULL;
 	ApiFunctionInfo *afi = NULL;
 
+	CharLowerA(sym->mod);
+
 	mai = AbpSearchModuleApiInfo(sym->mod);
 
 	if (!mai)
@@ -180,12 +182,13 @@ duint AbpGetPEDataOfMainModule(duint type, int sectIndex)
 	return AbpGetPEDataOfMainModule2(&mainModule, type, sectIndex);
 }
 
-void AbpDynamicApiEnumHandler(char *module, char *api, duint mod, duint apiAddr, duint apiRva)
+INTERNAL_EXPORT bool AbiRegisterDynamicApi(const char *module, const char *api, duint mod, duint apiAddr, duint apiRva)
 {
 	SymbolInfo sym;
 	ApiFunctionInfo *afi;
 
 	DBGPRINT("Registering dynaload api %s(%p) : %s(%p)", module, mod, api, apiAddr);
+	
 	
 	memset(&sym, 0, sizeof(SymbolInfo));
 	strcpy(sym.mod, module);
@@ -199,7 +202,11 @@ void AbpDynamicApiEnumHandler(char *module, char *api, duint mod, duint apiAddr,
 		
 		if (afi->ownerModule->baseAddr == 0)
 			afi->ownerModule->baseAddr = mod;
+
+		return true;
 	}
+
+	return false;
 }
 
 INTERNAL_EXPORT bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi)
@@ -229,7 +236,19 @@ INTERNAL_EXPORT bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi)
 
 bool AbHasDebuggingProcess()
 {
-	return GetMainModuleBase() > 0;
+	ModuleInfo mi;
+
+	if (DbgIsDebugging())
+	{
+		if (GetMainModuleInfo(&mi))
+		{
+			return true;
+		}
+		else
+			DBGPRINT("Debugger is in the debugging state but cant get main module info?!");
+	}
+
+	return false;
 }
 
 void AbReleaseResources()
@@ -257,7 +276,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 	SymbolInfo *sym = NULL;
 	ModuleApiInfo *mai = NULL;
 	ApiFunctionInfo *afi = NULL;
-	
+
 	if (!AbpNeedsReloadModuleAPIs())
 		return true;
 
@@ -286,7 +305,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 	{
 		if (onlyImportsByExe)
 		{
-			if (sym->type == Import && HlpEndsWithA(sym->mod, ".exe", 4))
+			if (sym->type == Import && HlpEndsWithA(sym->mod, ".exe",FALSE, 4))
 			{
 				//Executables provides psoude module import data
 				//for now we reserve api registration slot
@@ -294,7 +313,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 					mai = afi->ownerModule;
 				
 			}
-			else if (sym->type == Export && !HlpEndsWithA(sym->mod,".exe",4))
+			else if (sym->type == Export && !HlpEndsWithA(sym->mod,".exe",FALSE, 4))
 			{
 				//Ok. we walkin on the real export modules now.
 				//try to get AFI if there is exist a reserved for psoude import data
@@ -307,13 +326,25 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 		}
 		else
 		{
-			if (sym->type == Export && !HlpEndsWithA(sym->mod, ".exe", 4))
+			if (sym->type == Export && !HlpEndsWithA(sym->mod, ".exe", FALSE, 4))
 			{
 				AbpRegisterApi(sym,NULL);
 			}
 		}
 
 		sym++;
+	}
+
+	if (AbpModuleList.size() == 0 )
+	{
+		MessageBoxA(AbHwndDlgHandle, "The ApiBreak could not load any imports from the being debugged image.\r\n"
+			"Because, imports are treated as export by the x64dbg. (Its a x64dbg Bug)\r\n"
+			"Please update your x64dbg to version v2.5 Build snapshot_2017-02-05_20-52 (Feb 5 2017)",
+			"WARNING",
+			MB_OK | MB_ICONWARNING);
+
+		success = false;
+		goto cleanAndExit;
 	}
 
 	if (onlyImportsByExe)
@@ -326,7 +357,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 	GetMainModuleInfo(&AbpCurrentMainModule);
 	
 	if (AbGetSettings()->exposeDynamicApiLoads)
-		AbiDetectAPIsUsingByGetProcAddress(AbpDynamicApiEnumHandler);
+		AbiDetectAPIsUsingByGetProcAddress();
 	else
 		DBGPRINT("dynamic api detection disabled!");
 

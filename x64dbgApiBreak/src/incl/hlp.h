@@ -10,6 +10,8 @@
 
 void HlpDebugPrint(const char *format, ...);
 
+LPSTR HlpCloneStringA(LPCSTR str);
+
 LPWSTR HlpAnsiToWideString(LPCSTR str);
 LPSTR HlpWideToAnsiString(LPCWSTR str);
 
@@ -18,9 +20,9 @@ void  HlpTrimChar(LPSTR str, CHAR chr, int option);
 
 #define HlpRemoveQuotations(str) HlpTrimChar(str, '\"', HLP_TRIM_BOTH)
 
-bool HlpBeginsWithA(LPCSTR look, LPCSTR find, LONG findLen);
+bool HlpBeginsWithA(LPCSTR look, LPCSTR find, BOOL caseSens, LONG findLen);
 
-bool HlpEndsWithA(LPCSTR look, LPCSTR find, LONG findLen);
+bool HlpEndsWithA(LPCSTR look, LPCSTR find, BOOL caseSens, LONG findLen);
 
 LONG HlpPrintFormatBufferExA(LPSTR *buffer, LPCSTR format, va_list vl);
 

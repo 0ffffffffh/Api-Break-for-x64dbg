@@ -9,19 +9,21 @@
 class SettingsForm : public UiWrapper
 {
 private:
-	UiCheckBox *chkDetectDynLdr;
+	UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle;
 
 	void FillGui()
 	{
 		Settings *settings = AbGetSettings();
 
 		this->chkDetectDynLdr->SetState(settings->exposeDynamicApiLoads);
+		this->chkInclGetModHandle->SetState(settings->includeGetModuleHandle);
 	}
 
 	void GetFromGUI()
 	{
 		Settings *setting = AbGetSettings();
 		setting->exposeDynamicApiLoads = this->chkDetectDynLdr->GetState();
+		setting->includeGetModuleHandle = this->chkInclGetModHandle->GetState();
 	}
 
 	bool LoadSettings()
@@ -66,7 +68,8 @@ public:
 		SetWindowTitleA(AB_APPTITLE);
 
 		this->chkDetectDynLdr = GetControlById<UiCheckBox>(IDC_CHKDETECTDYNLDR);
-		
+		this->chkInclGetModHandle = GetControlById<UiCheckBox>(IDC_CHKINSPGETMODULEHANDLE);
+
 		LoadSettings();
 
 	}
