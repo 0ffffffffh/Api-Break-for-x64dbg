@@ -147,9 +147,17 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 	}
 }
 
+
+DBG_LIBEXPORT void CBPAUSEDEBUG(CBTYPE cbType, PLUG_CB_PAUSEDEBUG *pause)
+{
+	DBGPRINT("paused");
+}
+
 DBG_LIBEXPORT void CBLOADDLL(CBTYPE cbType, PLUG_CB_LOADDLL *dllLoad)
 {
-	AbiRaiseOnDemandLoader(dllLoad->modname, (duint)dllLoad->modInfo->BaseOfImage);
+	duint base = DbgModBaseFromName(dllLoad->modname);
+	DBGPRINT("DLL Loaded and its Base %p", base);
+	AbiRaiseOnDemandLoader(dllLoad->modname, base);
 }
 
 DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)

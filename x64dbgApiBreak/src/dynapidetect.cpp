@@ -319,7 +319,7 @@ bool AbpParseLoadInstruction(char *inst,LoadInstInfo *linst)
 	return true;
 }
 
-duint AbpGetActualDataAddress(BASIC_INSTRUCTION_INFO *inst)
+INTERNAL_EXPORT duint AbpGetActualDataAddress(BASIC_INSTRUCTION_INFO *inst)
 {
 	if (inst->type == TYPE_ADDR)
 		return inst->value.value;
@@ -459,7 +459,7 @@ bool AbpExposeStringArgument(short argNumber, char *buf)
 	return AbpGetApiStringFromProcLoader(argNumber, buf);
 }
 
-bool AbpIsValidApi(const char *module, const char *function)
+bool AbpIsValidApi(const char *module, const char *function, duint *rva)
 {
 	PBYTE mod = NULL;
 	PIMAGE_NT_HEADERS ntHdr;
@@ -468,7 +468,8 @@ bool AbpIsValidApi(const char *module, const char *function)
 	DWORD moduleSize, exportTableVa;
 	HANDLE moduleFile, mapping;
 	char *exportName;
-	ULONG *addressOfNameStrings;
+	ULONG *addressOfNameStrings, *addressOfFunctions;
+	WORD *addressOfOrd;
 	duint imageBase;
 
 	bool valid = false;
@@ -545,13 +546,21 @@ bool AbpIsValidApi(const char *module, const char *function)
 	exportTableVa = ntHdr->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
 	ped = (PIMAGE_EXPORT_DIRECTORY)(exportTableVa + imageBase);
 	addressOfNameStrings = (ULONG *)(ped->AddressOfNames + imageBase);
-	
+
 	for (int i = 0;i < ped->NumberOfNames;i++)
 	{
 		exportName = (char *)(imageBase + addressOfNameStrings[i]);
 
 		if (!strcmp(exportName, function))
 		{
+			if (rva != NULL)
+			{
+				addressOfFunctions = (ULONG *)(ped->AddressOfFunctions + imageBase);
+				addressOfOrd = (WORD *)(ped->AddressOfNameOrdinals + imageBase);
+
+				*rva = (duint)(addressOfFunctions[addressOfOrd[i]]);
+			}
+
 			valid = true;
 			break;
 		}
@@ -566,28 +575,50 @@ fail:
 	return valid;
 }
 
+duint AbpGetCallDestinationAddress(BASIC_INSTRUCTION_INFO *inst)
+{
+	duint callAddr = 0;
+
+	if ((inst->type & TYPE_ADDR) || (inst->type & TYPE_VALUE))
+		callAddr = inst->value.value;
+	else if (inst->type == TYPE_MEMORY)
+		DbgMemRead(inst->memory.value, &callAddr, inst->memory.size);
+
+	return callAddr;
+}
+
 bool AbpIsAPICall2(duint code, ApiFunctionInfo *afi, BASIC_INSTRUCTION_INFO *inst, bool cacheInstruction)
 {
-	duint callAddr;
-	
+	duint callAddr, trambolineAddr;
+
+	BASIC_INSTRUCTION_INFO destInst;
+
 	if (inst->call && inst->branch)
 	{
-		callAddr = 0;
-
-		if (inst->type == TYPE_ADDR)
-			callAddr = inst->value.value;
-		else if (inst->type == TYPE_MEMORY)
-		{
-			if (sizeof(duint) < inst->memory.size)
-				DBGPRINT("Integer overflow. What do you to do?");
-			else
-				DbgMemRead(inst->memory.value, &callAddr, inst->memory.size);
-		}
+		callAddr = AbpGetCallDestinationAddress(inst);
 
 		if (callAddr == afi->ownerModule->baseAddr + afi->rva)
 		{
 			DBGPRINT("'%s' call found at %p",afi->name, code);
 			return true;
+		}
+		else
+		{
+			DbgDisasmFastAt(callAddr, &destInst);
+
+			//We looking for only jmp. Eliminate other conditional jumps
+			if (!destInst.call && destInst.branch && HlpBeginsWithA(destInst.instruction,"jmp",FALSE,3))
+			{
+				trambolineAddr = AbpGetCallDestinationAddress(&destInst);
+
+				if (trambolineAddr == afi->ownerModule->baseAddr + afi->rva)
+				{
+					DBGPRINT("Indirect call (Tramboline) found for %s at 0x%p from 0x%p", 
+						afi->name, callAddr, trambolineAddr);
+
+					return true;
+				}
+			}
 		}
 	}
 
@@ -640,7 +671,7 @@ bool AbpRegisterAPI(char *module, char *api)
 		return true;
 	}
 
-	if (!AbpIsValidApi(module, api))
+	if (!AbpIsValidApi(module, api,NULL))
 	{
 		DBGPRINT("Not valid api");
 		return false;
@@ -655,15 +686,11 @@ INTERNAL_EXPORT void AbiRaiseOnDemandLoader(const char *dllName, duint base)
 	ondemand_api_list::iterator modIter;
 	vector<char *> *apiList;
 
-	DBGPRINT("%s loaded looking for its one of the deferred module",dllName);
-
+	
 	modIter = AbpDeferList.find(string(dllName));
 
 	if (modIter == AbpDeferList.end())
-	{
-		DBGPRINT("No, its not");
 		return;
-	}
 
 	apiList = modIter->second;
 
@@ -671,7 +698,32 @@ INTERNAL_EXPORT void AbiRaiseOnDemandLoader(const char *dllName, duint base)
 
 	for (vector<char *>::iterator it = apiList->begin(); it != apiList->end(); it++)
 	{
+		//TODO: Find a way to get remote proc address in DLLLOAD callback
+
+		//Probably returns null ?
 		funcAddr = Script::Misc::RemoteGetProcAddress(dllName, *it);
+
+		if (!funcAddr)
+		{
+			//And also it may returns null
+			funcAddr = (duint)ImporterGetRemoteAPIAddressEx(dllName, *it);
+
+			if (!funcAddr)
+			{
+				duint rva=0;
+
+				//worst case! 
+				//We know the loaded dll's base address. 
+				//So if I can read rva of the API from the export table
+				//I can calculate the real API address in the memory.
+				//Its a bit slower but it works.
+				if (AbpIsValidApi(dllName, *it, &rva))
+				{
+					funcAddr = base + rva;			
+				}
+
+			}
+		}
 
 		if (funcAddr > 0)
 		{
@@ -739,7 +791,6 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 	end = code + codeSect.size;
 
 	DBGPRINT("Scanning range %p - %p", code, end);
-
 
 	while (code < end)
 	{
@@ -823,7 +874,8 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 			NEXT_INSTR_ADDR(&code, &inst);
 	}
 
-	DBGPRINT("Success. %d API(s) found!", totalFoundApi);
+	if (totalFoundApi>0)
+		DBGPRINT("%d dynamic API(s) found!", totalFoundApi);
 
 	return true;
 }

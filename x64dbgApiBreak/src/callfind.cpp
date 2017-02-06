@@ -1,5 +1,6 @@
 #include <corelib.h>
 
+INTERNAL duint AbpGetActualDataAddress(BASIC_INSTRUCTION_INFO *inst);
 
 FORWARDED int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunctionInfo *afi)
 {
@@ -23,12 +24,7 @@ FORWARDED int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunction
 
 		if (inst.call || inst.branch)
 		{
-			callAddr = 0;
-
-			if (inst.type == TYPE_ADDR)
-				callAddr = inst.value.value;
-			else if (inst.type == TYPE_MEMORY)
-				DbgMemRead(inst.memory.value, &callAddr, inst.memory.size);
+			callAddr = AbpGetActualDataAddress(&inst);
 
 			//Gotcha!
 			if (afi->ownerModule->baseAddr + afi->rva == callAddr)

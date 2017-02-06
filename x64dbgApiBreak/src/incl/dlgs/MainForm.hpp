@@ -193,7 +193,7 @@ private:
 
 		if (modCount > 0)
 		{
-			AbGetDebuggingProcessName(processName);
+			AbGetDebuggedImageName(processName);
 
 			_this->SetControlTextFormatA(IDC_GRPMOD, "Imported modules && APIs by \"%s\"", processName);
 			_this->EnableControl(IDC_BTNSETBP);

@@ -1,5 +1,4 @@
 #include <corelib.h>
-#include <pluginsdk/_scriptapi_module.h>
 #include <pluginsdk/_scriptapi_symbol.h>
 #include <pluginsdk/_scriptapi_debug.h>
 #include <pluginsdk/bridgemain.h>
@@ -161,7 +160,7 @@ bool AbpNeedsReloadModuleAPIs()
 {
 	ModuleInfo mod;
 
-	if (!GetMainModuleInfo(&mod))
+	if (!AbGetDebuggedModuleInfo(&mod))
 		return false;
 
 	return strcmp(mod.name, AbpCurrentMainModule.name) != 0;
@@ -176,7 +175,7 @@ duint AbpGetPEDataOfMainModule(duint type, int sectIndex)
 {
 	ModuleInfo mainModule;
 	
-	if (!GetMainModuleInfo(&mainModule))
+	if (!AbGetDebuggedModuleInfo(&mainModule))
 		return 0;
 
 	return AbpGetPEDataOfMainModule2(&mainModule, type, sectIndex);
@@ -214,14 +213,14 @@ INTERNAL_EXPORT bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi)
 	ModuleInfo mainModule;
 	DWORD flags;
 
-	if (!GetMainModuleInfo(&mainModule))
+	if (!AbGetDebuggedModuleInfo(&mainModule))
 		return 0;
 
 	for (int i = 0;i < mainModule.sectionCount;i++)
 	{
 		flags = AbpGetPEDataOfMainModule2(&mainModule, UE_SECTIONFLAGS, i);
 
-		if (flags | IMAGE_SCN_CNT_CODE)
+		if (flags & IMAGE_SCN_CNT_CODE)
 		{
 			msi->addr = mainModule.base + AbpGetPEDataOfMainModule2(&mainModule, UE_SECTIONVIRTUALOFFSET, i);
 			msi->size = AbpGetPEDataOfMainModule2(&mainModule, UE_SECTIONVIRTUALSIZE, i);
@@ -233,6 +232,43 @@ INTERNAL_EXPORT bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi)
 	return false;
 }
 
+bool AbGetDebuggedImageName(char *buffer)
+{
+	ModuleInfo mod;
+
+	if (!AbGetDebuggedModuleInfo(&mod))
+		return false;
+
+	strcpy(buffer, mod.name);
+	return true;
+}
+
+bool AbGetDebuggedModuleInfo(ModuleInfo *modInfo)
+{
+	duint mainModAddr;
+
+	mainModAddr = AbGetDebuggedImageBase();
+
+	if (!mainModAddr)
+		return false;
+
+	return InfoFromAddr(mainModAddr, modInfo);
+}
+
+duint AbGetDebuggedImageBase()
+{
+	duint base = GetMainModuleBase();
+
+	if (base)
+		return base;
+
+	base = (duint)GetDebuggedFileBaseAddress();
+
+	if (!base)
+		base = (duint)GetDebuggedDLLBaseAddress();
+
+	return base;
+}
 
 bool AbHasDebuggingProcess()
 {
@@ -240,12 +276,7 @@ bool AbHasDebuggingProcess()
 
 	if (DbgIsDebugging())
 	{
-		if (GetMainModuleInfo(&mi))
-		{
-			return true;
-		}
-		else
-			DBGPRINT("Debugger is in the debugging state but cant get main module info?!");
+		return AbGetDebuggedModuleInfo(&mi);
 	}
 
 	return false;
@@ -258,12 +289,6 @@ void AbReleaseResources()
 		AbpDeregisterModule((*AbpModuleList.begin()));
 	}
 }
-
-void AbGetDebuggingProcessName(char *buffer)
-{
-	GetMainModuleName(buffer);
-}
-
 
 bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 {
@@ -354,7 +379,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 
 	success = true;
 
-	GetMainModuleInfo(&AbpCurrentMainModule);
+	AbGetDebuggedModuleInfo(&AbpCurrentMainModule);
 	
 	if (AbGetSettings()->exposeDynamicApiLoads)
 		AbiDetectAPIsUsingByGetProcAddress();

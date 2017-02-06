@@ -1,3 +1,5 @@
+#ifndef __APIBREAK_H__
+#define __APIBREAK_H__
 
 
 //Disable shitty paranoid warnings
@@ -17,6 +19,7 @@
 #include <pluginsdk/_plugin_types.h>
 #include <pluginsdk/_plugins.h>
 #include <pluginsdk/TitanEngine/TitanEngine.h>
+#include <pluginsdk/_scriptapi_module.h>
 
 #include <unordered_map>
 #include <vector>
@@ -65,12 +68,15 @@ typedef struct __BpCallbackContext
 	void *						user;
 }BpCallbackContext;
 
+bool AbGetDebuggedImageName(char *buffer);
+
+bool AbGetDebuggedModuleInfo(Script::Module::ModuleInfo *modInfo);
+
+duint AbGetDebuggedImageBase();
 
 bool AbHasDebuggingProcess();
 
 void AbReleaseResources();
-
-void AbGetDebuggingProcessName(char *buffer);
 
 bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe);
 
@@ -87,3 +93,5 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
 bool AbRegisterBpCallback(BpCallbackContext *cbctx);
 
 void AbDeregisterBpCallback(BpCallbackContext *cbctx);
+
+#endif // !__APIBREAK_H__
