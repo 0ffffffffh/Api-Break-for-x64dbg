@@ -19,7 +19,7 @@ void *AbMemoryAlloc(int size);
 void *AbMemoryRealloc(void *memPtr, int newSize);
 void AbMemoryFree(void *memPtr);
 
-
+void AbReleaseAllSystemResources(bool isInShutdown);
 
 FORWARDED int		AbPluginHandle;
 FORWARDED HWND		AbHwndDlgHandle;

@@ -76,7 +76,7 @@ duint AbGetDebuggedImageBase();
 
 bool AbHasDebuggingProcess();
 
-void AbReleaseResources();
+void AbReleaseModuleResources();
 
 bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe);
 

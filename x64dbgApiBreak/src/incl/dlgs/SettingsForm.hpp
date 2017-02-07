@@ -9,7 +9,7 @@
 class SettingsForm : public UiWrapper
 {
 private:
-	UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle;
+	UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle,*chkAutoload;
 
 	void FillGui()
 	{
@@ -17,6 +17,7 @@ private:
 
 		this->chkDetectDynLdr->SetState(settings->exposeDynamicApiLoads);
 		this->chkInclGetModHandle->SetState(settings->includeGetModuleHandle);
+		this->chkAutoload->SetState(settings->autoLoadData);
 	}
 
 	void GetFromGUI()
@@ -24,6 +25,7 @@ private:
 		Settings *setting = AbGetSettings();
 		setting->exposeDynamicApiLoads = this->chkDetectDynLdr->GetState();
 		setting->includeGetModuleHandle = this->chkInclGetModHandle->GetState();
+		setting->autoLoadData = this->chkAutoload->GetState();
 	}
 
 	bool LoadSettings()
@@ -69,6 +71,7 @@ public:
 
 		this->chkDetectDynLdr = GetControlById<UiCheckBox>(IDC_CHKDETECTDYNLDR);
 		this->chkInclGetModHandle = GetControlById<UiCheckBox>(IDC_CHKINSPGETMODULEHANDLE);
+		this->chkAutoload = GetControlById<UiCheckBox>(IDC_CHKAUTOLOAD);
 
 		LoadSettings();
 

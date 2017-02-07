@@ -9,7 +9,7 @@ using namespace Script::Misc;
 using namespace std;
 
 INTERNAL ApiFunctionInfo *AbiGetAfi(const char *module, const char *afiName);
-INTERNAL bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi);
+INTERNAL int AbiGetMainModuleCodeSections(ModuleSectionInfo **msi);
 INTERNAL bool AbiRegisterDynamicApi(const char *module, const char *api, duint mod, duint apiAddr, duint apiRva);
 
 #define ALIGNTO_PAGE(x) ( ((x)/0x1000+1) * 0x1000 )
@@ -139,7 +139,7 @@ CachedInst *AbpGetCachedInst(int index)
 	return &AbpCachedDisasmedInstructions[index];
 }
 
-void AbpEmptyInstructionCache()
+INTERNAL_EXPORT void AbiEmptyInstructionCache()
 {
 	memset(AbpCachedDisasmedInstructions, 0, sizeof(CachedInst) * ABP_CACHED_DISASM_SIZE);
 	AbpDisasmedCacheIndex = 0;
@@ -547,7 +547,7 @@ bool AbpIsValidApi(const char *module, const char *function, duint *rva)
 	ped = (PIMAGE_EXPORT_DIRECTORY)(exportTableVa + imageBase);
 	addressOfNameStrings = (ULONG *)(ped->AddressOfNames + imageBase);
 
-	for (int i = 0;i < ped->NumberOfNames;i++)
+	for (DWORD i = 0;i < ped->NumberOfNames;i++)
 	{
 		exportName = (char *)(imageBase + addressOfNameStrings[i]);
 
@@ -680,7 +680,7 @@ bool AbpRegisterAPI(char *module, char *api)
 	return AbpRegisterDeferredAPIRegistration(module, api);
 }
 
-INTERNAL_EXPORT void AbiRaiseOnDemandLoader(const char *dllName, duint base)
+INTERNAL_EXPORT void AbiRaiseDeferredLoader(const char *dllName, duint base)
 {
 	duint funcAddr;
 	ondemand_api_list::iterator modIter;
@@ -751,11 +751,11 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 
 	BASIC_INSTRUCTION_INFO inst;
 
-	ModuleSectionInfo codeSect;
+	ModuleSectionInfo *codeSects;
 	ApiFunctionInfo *procafi=NULL;
 	ApiFunctionInfo *libafis[6] = { 0 };
 	int ldrVariantCount = 0,procLdrCount=0;
-	int totalFoundApi = 0;
+	int totalFoundApi = 0,sectCount;
 
 	int ldrVariantLimit;
 	bool skip;
@@ -784,94 +784,96 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 	if (!ldrVariantCount || !procafi)
 		return false;
 
-	if (!AbiGetMainModuleCodeSection(&codeSect))
+	sectCount = AbiGetMainModuleCodeSections(&codeSects);
+
+	if (!sectCount)
 		return false;
 
-	code = codeSect.addr;
-	end = code + codeSect.size;
-
-	DBGPRINT("Scanning range %p - %p", code, end);
-
-	while (code < end)
+	for (int cnx = 0;cnx < sectCount;cnx++)
 	{
-		DbgDisasmFastAt(code, &inst);
+		code = codeSects[cnx].addr;
+		end = code + codeSects[cnx].size;
 
-		if (AbpIsLoadLibraryXXXCall(libafis,ldrVariantCount,code,&inst,true))
+		DBGPRINT("Scanning range %p - %p of %d. section", code, end,cnx+1);
+
+		while (code < end)
 		{
-			memset(moduleName, 0, sizeof(moduleName));
+			DbgDisasmFastAt(code, &inst);
 
-			skip = !AbpExposeStringArgument(1, moduleName);
-
-			AbpEmptyInstructionCache();
-
-			if (skip)
+			if (AbpIsLoadLibraryXXXCall(libafis, ldrVariantCount, code, &inst, true))
 			{
-				NEXT_INSTR_ADDR(&code, &inst);
-				continue;
-			}
+				memset(moduleName, 0, sizeof(moduleName));
 
-			if (!HlpEndsWithA(moduleName, ".dll", FALSE, 4))
-				strcat(moduleName, ".dll");
+				skip = !AbpExposeStringArgument(1, moduleName);
 
-			procLdrCount = 0;
+				AbiEmptyInstructionCache();
 
-			while (1)
-			{
-				NEXT_INSTR_ADDR(&code, &inst);
-
-				DbgDisasmFastAt(code, &inst);
-
-				if (!strncmp(inst.instruction, "ret", 3))
+				if (skip)
 				{
-					if (!procLdrCount)
-						DBGPRINT("GetProcAddress is not called after LoadLibraryXXX");
-					//else its ok. there is no more getprocaddress calls for the module
+					NEXT_INSTR_ADDR(&code, &inst);
+					continue;
+				}
 
-					DBGPRINT("%d API load found in single module", procLdrCount);
+				if (!HlpEndsWithA(moduleName, ".dll", FALSE, 4))
+					strcat(moduleName, ".dll");
 
+				procLdrCount = 0;
+
+				while (1)
+				{
 					NEXT_INSTR_ADDR(&code, &inst);
 
-					break;
-				}
+					DbgDisasmFastAt(code, &inst);
 
-				if (AbpIsAPICall(code, procafi, &inst))
-				{
-					memset(apiFuncName, 0, sizeof(apiFuncName));
+					if (!strncmp(inst.instruction, "ret", 3))
+					{
+						if (!procLdrCount)
+							DBGPRINT("GetProcAddress is not called after LoadLibraryXXX");
+						//else its ok. there is no more getprocaddress calls for the module
 
-					if (AbpExposeStringArgument(2, apiFuncName))
-					{
-						DBGPRINT("Found: %s : %s", moduleName, apiFuncName);
-						totalFoundApi++;
-						procLdrCount++;
-
-						AbpEmptyInstructionCache();
-#if 1
-						if (!AbpRegisterAPI(moduleName, apiFuncName))
-							DBGPRINT("Not load, not registered or not valid: %s:%s", moduleName, apiFuncName);
-#endif
-					}
-					else
-						DBGPRINT("Fail");
-				}
-				else if (AbpIsLoadLibraryXXXCall(libafis, ldrVariantCount, code, &inst, false))
-				{
-					if (!procLdrCount)
-					{
-						//We dont skip to next instruction address
-						//cuz, It will be our new loadlibrary reference.
-						DBGPRINT("Consecutive loadlibrary calls :/");
-					}
-					else
-					{
 						DBGPRINT("%d API load found in single module", procLdrCount);
+
+						NEXT_INSTR_ADDR(&code, &inst);
+
+						break;
 					}
 
-					break;
+					if (AbpIsAPICall(code, procafi, &inst))
+					{
+						memset(apiFuncName, 0, sizeof(apiFuncName));
+
+						if (AbpExposeStringArgument(2, apiFuncName))
+						{
+							DBGPRINT("Found: %s : %s", moduleName, apiFuncName);
+							totalFoundApi++;
+							procLdrCount++;
+
+							AbiEmptyInstructionCache();
+
+							if (!AbpRegisterAPI(moduleName, apiFuncName))
+								DBGPRINT("Not load, not registered or not valid: %s:%s", moduleName, apiFuncName);
+						}
+					}
+					else if (AbpIsLoadLibraryXXXCall(libafis, ldrVariantCount, code, &inst, false))
+					{
+						if (!procLdrCount)
+						{
+							//We dont skip to next instruction address
+							//cuz, It will be our new loadlibrary reference.
+							DBGPRINT("Consecutive loadlibrary calls :/");
+						}
+						else
+						{
+							DBGPRINT("%d API load found in single module", procLdrCount);
+						}
+
+						break;
+					}
 				}
 			}
+			else
+				NEXT_INSTR_ADDR(&code, &inst);
 		}
-		else
-			NEXT_INSTR_ADDR(&code, &inst);
 	}
 
 	if (totalFoundApi>0)
@@ -880,6 +882,21 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 	return true;
 }
 
+
+INTERNAL_EXPORT void AbiReleaseDeferredResources()
+{
+	for (ondemand_api_list::iterator it = AbpDeferList.begin(); it != AbpDeferList.end(); it++)
+	{
+		for (vector<char *>::iterator vit = it->second->begin(); vit != it->second->end(); vit++)
+		{
+			FREEOBJECT(*vit);
+		}
+
+		delete it->second;
+	}
+
+	AbpDeferList.clear();
+}
 
 INTERNAL_EXPORT void AbiInitDynapi()
 {

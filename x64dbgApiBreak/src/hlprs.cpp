@@ -27,7 +27,7 @@ LPSTR HlpCloneStringA(LPCSTR str)
 	if (!str)
 		return NULL;
 
-	len = strlen(str);
+	len = (int)strlen(str);
 
 	clone = ALLOCSTRINGA(len);
 

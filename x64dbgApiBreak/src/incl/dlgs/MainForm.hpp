@@ -249,7 +249,7 @@ public :
 
 		SETSTATUS("Loading modules");
 
-		if (AbHasDebuggingProcess())
+		if (AbHasDebuggingProcess() && !AbGetSettings()->autoLoadData)
 			QueueUserWorkItem((LPTHREAD_START_ROUTINE)ApiLoadWorker, this, WT_EXECUTEDEFAULT);
 		else
 			SETSTATUS("There is no debug process");

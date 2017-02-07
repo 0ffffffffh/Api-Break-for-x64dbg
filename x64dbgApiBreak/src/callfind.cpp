@@ -18,6 +18,9 @@ FORWARDED int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunction
 	code = codeBase;
 	codeEnd = code + codeSize; 
 
+	calls = afi->calls;
+	index = afi->callCount;
+
 	for (;code < codeEnd;)
 	{
 		DbgDisasmFastAt(code, &inst);

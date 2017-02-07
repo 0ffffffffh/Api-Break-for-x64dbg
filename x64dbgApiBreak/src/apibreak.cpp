@@ -10,10 +10,10 @@ using namespace Script::Debug;
 
 
 modlist		AbpModuleList;
-ModuleInfo	AbpCurrentMainModule;
 
 INTERNAL bool AbiDetectAPIsUsingByGetProcAddress();
 INTERNAL int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunctionInfo *afi);
+INTERNAL ModuleInfo *AbiGetCurrentModuleInfo();
 
 ModuleApiInfo *AbpSearchModuleApiInfo(const char *name)
 {
@@ -78,6 +78,9 @@ bool AbpDeregisterModule(ModuleApiInfo *mai)
 	
 	for (apit = mai->apiList->begin(); apit != mai->apiList->end(); apit++)
 	{
+		if (apit->second->calls)
+			FREEOBJECT(apit->second->calls);
+
 		FREEOBJECT(apit->second);
 	}
 	
@@ -163,7 +166,7 @@ bool AbpNeedsReloadModuleAPIs()
 	if (!AbGetDebuggedModuleInfo(&mod))
 		return false;
 
-	return strcmp(mod.name, AbpCurrentMainModule.name) != 0;
+	return strcmp(mod.name, AbiGetCurrentModuleInfo()->name) != 0;
 }
 
 duint AbpGetPEDataOfMainModule2(ModuleInfo *mi, duint type, int sectIndex)
@@ -208,10 +211,14 @@ INTERNAL_EXPORT bool AbiRegisterDynamicApi(const char *module, const char *api, 
 	return false;
 }
 
-INTERNAL_EXPORT bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi)
+INTERNAL_EXPORT int AbiGetMainModuleCodeSections(ModuleSectionInfo **msi)
 {
 	ModuleInfo mainModule;
 	DWORD flags;
+	ModuleSectionInfo *sectList = NULL;
+	int sectCount = 0;
+
+	*msi = NULL;
 
 	if (!AbGetDebuggedModuleInfo(&mainModule))
 		return 0;
@@ -222,14 +229,16 @@ INTERNAL_EXPORT bool AbiGetMainModuleCodeSection(ModuleSectionInfo *msi)
 
 		if (flags & IMAGE_SCN_CNT_CODE)
 		{
-			msi->addr = mainModule.base + AbpGetPEDataOfMainModule2(&mainModule, UE_SECTIONVIRTUALOFFSET, i);
-			msi->size = AbpGetPEDataOfMainModule2(&mainModule, UE_SECTIONVIRTUALSIZE, i);
-			return true;
+			sectCount++;
+			sectList = RESIZEOBJECTLIST(ModuleSectionInfo, sectList, sectCount);
+			sectList[sectCount-1].addr = mainModule.base + AbpGetPEDataOfMainModule2(&mainModule, UE_SECTIONVIRTUALOFFSET, i);
+			sectList[sectCount-1].size = AbpGetPEDataOfMainModule2(&mainModule, UE_SECTIONVIRTUALSIZE, i);
 		}
-
 	}
 
-	return false;
+	*msi = sectList;
+
+	return sectCount;
 }
 
 bool AbGetDebuggedImageName(char *buffer)
@@ -282,7 +291,7 @@ bool AbHasDebuggingProcess()
 	return false;
 }
 
-void AbReleaseResources()
+void AbReleaseModuleResources()
 {
 	while (AbpModuleList.size() > 0)
 	{
@@ -379,7 +388,6 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 
 	success = true;
 
-	AbGetDebuggedModuleInfo(&AbpCurrentMainModule);
 	
 	if (AbGetSettings()->exposeDynamicApiLoads)
 		AbiDetectAPIsUsingByGetProcAddress();
@@ -426,16 +434,18 @@ void AbEnumApiFunctionNames(APIMODULE_ENUM_PROC enumProc, const char *moduleName
 
 bool AbSetBreakpointOnCallers(const char *module, const char *apiFunction, int *bpRefCount)
 {
-	ModuleSectionInfo msi;
+	ModuleSectionInfo *msiList;
 	ApiFunctionInfo *afi;
-	int setBpCount = 0;
+	int setBpCount = 0,sectCount;
+	int lastCallIndex = 0;
 
-	if (!AbiGetMainModuleCodeSection(&msi))
+	sectCount = AbiGetMainModuleCodeSections(&msiList);
+
+	if (!sectCount)
 	{
 		DBGPRINT("cant get code section.");
 		return false;
 	}
-
 
 	afi = AbiGetAfi(module, apiFunction);
 
@@ -448,24 +458,28 @@ bool AbSetBreakpointOnCallers(const char *module, const char *apiFunction, int *
 	if (afi->callCount > 0)
 		return true;
 
-	if (AbiSearchCallersForAFI(msi.addr, msi.size, afi) > 0)
+	for (int i = 0;i < sectCount;i++)
 	{
-		for (int i = 0;i < afi->callCount;i++)
-		{
-			if (SetBreakpoint(afi->calls[i]))
-				setBpCount++;
-		}
+		lastCallIndex = afi->callCount;
 
-		if (afi->callCount - setBpCount > 0)
-			DBGPRINT("%d of %d bp not set", setBpCount, afi->callCount);
+		if (AbiSearchCallersForAFI(msiList[i].addr, msiList[i].size, afi) > 0)
+		{
+			for (int i = lastCallIndex;i < afi->callCount;i++)
+			{
+				if (SetBreakpoint(afi->calls[i]))
+					setBpCount++;
+			}
+		}
 	}
-	else
-		return false;
+
+
+	if (afi->callCount - setBpCount > 0)
+		DBGPRINT("%d of %d bp not set", setBpCount, afi->callCount);
 
 	if (bpRefCount != NULL)
 		*bpRefCount = setBpCount;
 
-	return true;
+	return setBpCount > 0;
 }
 
 bool AbSetBreakpoint(const char *module, const char *apiFunction, duint *funcAddr)

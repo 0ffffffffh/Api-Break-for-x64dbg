@@ -7,6 +7,7 @@ typedef struct
 {
 	bool exposeDynamicApiLoads;
 	bool includeGetModuleHandle;
+	bool autoLoadData;
 
 }Settings;
 

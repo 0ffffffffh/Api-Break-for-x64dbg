@@ -5,10 +5,11 @@
 #define ABP_DOUBLE_VALUE	2
 #define ABP_STRING_VALUE	3
 
-#define ABP_SETTING_COUNT	2
+#define ABP_SETTING_COUNT	3
 
 #define ABS_EXPOSEDYNLDR	0
 #define ABS_GETMODHANDLE	1
+#define ABS_AUTOLOAD		2
 
 struct {
 	const char *key;
@@ -16,7 +17,8 @@ struct {
 }AbpSettingList[ABP_SETTING_COUNT] =
 {
 	{"ExposeDynLoads",ABP_BOOL_VALUE},
-	{"InclGetModHandle",ABP_BOOL_VALUE}
+	{"InclGetModHandle",ABP_BOOL_VALUE},
+	{"Autoload", ABP_BOOL_VALUE}
 };
 
 #define STNG_LOAD(id,val) AbpGetSetting(AbpSettingList[id].key,(char *)val,AbpSettingList[id].type)
@@ -100,6 +102,9 @@ bool AbSettingsLoad()
 	if (!STNG_LOAD(ABS_GETMODHANDLE, &AbpSettings.includeGetModuleHandle))
 		AbpSettings.includeGetModuleHandle = false;
 
+	if (!STNG_LOAD(ABS_AUTOLOAD, &AbpSettings.autoLoadData))
+		AbpSettings.autoLoadData = false;
+
 	return true;
 }
 
@@ -109,6 +114,9 @@ bool AbSettingsSave()
 		return false;
 
 	if (!STNG_SAVE(ABS_GETMODHANDLE, AbpSettings.includeGetModuleHandle))
+		return false;
+
+	if (!STNG_SAVE(ABS_AUTOLOAD, AbpSettings.autoLoadData))
 		return false;
 
 	return true;
