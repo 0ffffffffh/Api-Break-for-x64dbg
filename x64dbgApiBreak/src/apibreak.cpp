@@ -14,6 +14,7 @@ modlist		AbpModuleList;
 INTERNAL bool AbiDetectAPIsUsingByGetProcAddress();
 INTERNAL int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunctionInfo *afi);
 INTERNAL ModuleInfo *AbiGetCurrentModuleInfo();
+FORWARDED BOOL AbpNeedsReload;
 
 ModuleApiInfo *AbpSearchModuleApiInfo(const char *name)
 {
@@ -311,7 +312,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 	ModuleApiInfo *mai = NULL;
 	ApiFunctionInfo *afi = NULL;
 
-	if (!AbpNeedsReloadModuleAPIs())
+	if (!AbpNeedsReload)
 		return true;
 
 	//First, detect dynamically loaded apis. 
@@ -388,11 +389,14 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 
 	success = true;
 
+	DBGPRINT("%d module found.", AbpModuleList.size());
 	
 	if (AbGetSettings()->exposeDynamicApiLoads)
 		AbiDetectAPIsUsingByGetProcAddress();
 	else
 		DBGPRINT("dynamic api detection disabled!");
+
+	AbpNeedsReload = FALSE;
 
 cleanAndExit:
 

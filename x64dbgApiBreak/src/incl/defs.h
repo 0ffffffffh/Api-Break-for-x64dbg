@@ -31,7 +31,7 @@
 
 #define AB_VERSION_MAJOR 0
 #define AB_VERSION_MINOR 3
-#define AB_VERSION_BUILD 22
+#define AB_VERSION_BUILD 25
 
 #if _WIN64
 #define AB_PLATFORM		"x64"

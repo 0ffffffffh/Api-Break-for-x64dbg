@@ -321,12 +321,10 @@ bool AbpParseLoadInstruction(char *inst,LoadInstInfo *linst)
 
 INTERNAL_EXPORT duint AbpGetActualDataAddress(BASIC_INSTRUCTION_INFO *inst)
 {
-	if (inst->type == TYPE_ADDR)
+	if ((inst->type & TYPE_ADDR) || (inst->type & TYPE_VALUE))
 		return inst->value.value;
 	else if (inst->type == TYPE_MEMORY)
 		return inst->memory.value;
-	else if (inst->type == TYPE_VALUE)
-		return inst->value.value;
 
 	return 0;
 }
@@ -782,7 +780,10 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 	}
 	
 	if (!ldrVariantCount || !procafi)
+	{
+		DBGPRINT("This process does not use any runtime module and api loading.");
 		return false;
+	}
 
 	sectCount = AbiGetMainModuleCodeSections(&codeSects);
 

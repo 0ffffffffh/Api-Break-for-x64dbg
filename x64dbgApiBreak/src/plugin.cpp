@@ -26,6 +26,7 @@ const char *DBGSTATE_STRINGS[5] =
 
 BYTE								AbpDbgState;
 Script::Module::ModuleInfo			AbpCurrentMainModule;
+BOOL								AbpNeedsReload=FALSE;
 
 INTERNAL int		AbPluginHandle;
 INTERNAL HWND		AbHwndDlgHandle;
@@ -42,7 +43,8 @@ INTERNAL void AbiUninitDynapi();
 INTERNAL void AbiReleaseDeferredResources();
 INTERNAL void AbiEmptyInstructionCache();
 
-unordered_map<duint, BpCallbackContext *> AbpBpCallbacks;
+unordered_map<duint, BpCallbackContext *>	AbpBpCallbacks;
+BOOL										AbpHasPendingInit = FALSE;
 
 INTERNAL_EXPORT Script::Module::ModuleInfo *AbiGetCurrentModuleInfo()
 {
@@ -103,10 +105,39 @@ void AbDeregisterBpCallback(BpCallbackContext *cbctx)
 	AbpBpCallbacks.erase(iter);
 }
 
+int WINAPI Loader(void *)
+{
+	AbLoadAvailableModuleAPIs(true);
+	return 0;
+}
+
+void AbpOnDebuggerStateChanged(BYTE state, const char *module)
+{
+	switch (state)
+	{
+		case DWS_ATTACHEDPROCESS:
+		case DWS_CREATEPROCESS:
+		{
+			if (AbGetSettings()->autoLoadData)
+			{
+				AbpHasPendingInit = TRUE;
+			}
+		}
+		break;
+		case DWS_DETACHEDPROCESS:
+		case DWS_EXITEDPROCESS:
+		{
+			AbReleaseAllSystemResources(false);
+		}
+		break;
+	}
+}
+
 void AbpRaiseDbgStateChangeEvent()
 {
 	DBGPRINT("%s (%s)", AbpCurrentMainModule.name, DBGSTATE_STRINGS[AbpDbgState]);
 
+	AbpOnDebuggerStateChanged(AbpDbgState, AbpCurrentMainModule.name);
 
 	if (AbpDbgState > DWS_ATTACHEDPROCESS)
 	{
@@ -118,6 +149,8 @@ void AbpRaiseDbgStateChangeEvent()
 
 void AbReleaseAllSystemResources(bool isInShutdown)
 {
+	DBGPRINT("Releasing used resources. shutdown=%d",isInShutdown);
+
 	AbiEmptyInstructionCache();
 	AbiReleaseDeferredResources();
 	AbpReleaseBreakpointCallbackResources();
@@ -208,6 +241,15 @@ DBG_LIBEXPORT void CBLOADDLL(CBTYPE cbType, PLUG_CB_LOADDLL *dllLoad)
 	AbiRaiseDeferredLoader(dllLoad->modname, base);
 }
 
+DBG_LIBEXPORT void CBSYSTEMBREAKPOINT(CBTYPE cbType, PLUG_CB_SYSTEMBREAKPOINT *sysbp)
+{
+	if (AbpHasPendingInit)
+	{
+		AbpHasPendingInit = FALSE;
+		QueueUserWorkItem((LPTHREAD_START_ROUTINE)Loader, NULL, WT_EXECUTEDEFAULT);
+	}
+}
+
 DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 {
 	BpCallbackContext *bpcb = NULL;
@@ -219,6 +261,14 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 		DBGPRINT("Special bp found. Raising breakpoint callback");
 		bpcb->bp = info->breakpoint;
 		bpcb->callback(bpcb);
+	}
+	else
+	{
+		if (AbpHasPendingInit)
+		{
+			AbpHasPendingInit = FALSE;
+			QueueUserWorkItem((LPTHREAD_START_ROUTINE)Loader, NULL, WT_EXECUTEDEFAULT);
+		}
 	}
 }
 
@@ -237,6 +287,7 @@ DBG_LIBEXPORT void CBCREATEPROCESS(CBTYPE cbType, PLUG_CB_CREATEPROCESS *newProc
 resumeExec:
 
 	AbGetDebuggedModuleInfo(&AbpCurrentMainModule);
+	AbpNeedsReload = TRUE;
 
 	AbpRaiseDbgStateChangeEvent();
 }
