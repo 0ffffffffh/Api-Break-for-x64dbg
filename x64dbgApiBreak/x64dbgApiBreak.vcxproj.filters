@@ -54,6 +54,9 @@
     <ClInclude Include="src\incl\settings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\incl\instparse.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\apibreak.cpp">
@@ -78,6 +81,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\settings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\instparse.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

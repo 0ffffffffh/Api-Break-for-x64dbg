@@ -34,8 +34,12 @@ struct __BpCallbackContext;
 typedef struct
 {
 	_T(ModuleApiInfo *)			ownerModule;
-	duint *						calls;
-	int							callCount;
+	struct
+	{
+		duint *					calls;
+		int						callCount;
+		int						callListSize;
+	}callInfo;
 	duint						rva;
 	char						name[MAX_LABEL_SIZE];
 }ApiFunctionInfo;
@@ -68,9 +72,13 @@ typedef struct __BpCallbackContext
 	void *						user;
 }BpCallbackContext;
 
+bool AbCmdExecFormat(const char *format, ...);
+
 bool AbGetDebuggedImageName(char *buffer);
 
 bool AbGetDebuggedModuleInfo(Script::Module::ModuleInfo *modInfo);
+
+bool AbGetDebuggedModulePath(char *pathBuf, int bufLen);
 
 duint AbGetDebuggedImageBase();
 

@@ -1,5 +1,6 @@
 #include <corelib.h>
 #include <settings.h>
+#include <instparse.h>
 #include <unordered_map>
 #include <pluginsdk/_scriptapi_module.h>
 #include <pluginsdk/_scriptapi_misc.h>
@@ -11,17 +12,18 @@ using namespace std;
 INTERNAL ApiFunctionInfo *AbiGetAfi(const char *module, const char *afiName);
 INTERNAL int AbiGetMainModuleCodeSections(ModuleSectionInfo **msi);
 INTERNAL bool AbiRegisterDynamicApi(const char *module, const char *api, duint mod, duint apiAddr, duint apiRva);
+INTERNAL bool AbiIsIndirectCall(duint code, ApiFunctionInfo *afi, duint *indirectRef);
 
 #define ALIGNTO_PAGE(x) ( ((x)/0x1000+1) * 0x1000 )
 
 
 typedef  unordered_map<string, vector<char *> *> ondemand_api_list;
 
-HANDLE				AbpDeferListSyncMutant;
-ondemand_api_list	AbpDeferList;
+HANDLE				    AbpDeferListSyncMutant;
+ondemand_api_list	    AbpDeferList;
 
-#define SYNCH_BEGIN		WaitForSingleObject(AbpDeferListSyncMutant,INFINITE)
-#define SYNCH_END		ReleaseMutex(AbpDeferListSyncMutant)
+#define SYNCH_BEGIN     WaitForSingleObject(AbpDeferListSyncMutant,INFINITE)
+#define SYNCH_END       ReleaseMutex(AbpDeferListSyncMutant)
 
 
 /*
@@ -61,72 +63,11 @@ CALL GetProcAddress
 
 typedef struct
 {
-	unsigned char					size;
-	unsigned char					op;
-	unsigned char					reg;
-	unsigned char					memstore;
-	unsigned short					disp;
-	duint							imm;
-}LoadInstInfo;
-
-typedef struct
-{
 	BASIC_INSTRUCTION_INFO			inst;
 	duint							addr;
 }CachedInst;
 
-#define OP_MOV						1
-#define OP_LEA						2
-#define OP_PUSH						3
-
-#define ORD_OP						0
-#define ORD_DREG					1
-#define ORD_DONE					2
-
-#define ABP_CACHED_DISASM_SIZE		10
-
-#define GET_REGSIZE(pfx)			(pfx == 'r' ? 64 : pfx == 'e' ? 32 : 8)
-
-typedef enum
-{
-	RegNone=-1,
-	Ax,
-	Bx,
-	Cx,
-	Dx,
-	Si,
-	Di,
-	Bp,
-	Sp,
-	r8,
-	r9,
-	r10,
-	r11,
-	r12,
-	r13,
-	r14,
-	r15
-}RegId;
-
-const char *regs[16]
-{
-	"*ax",
-	"*bx",
-	"*cx",
-	"*dx",
-	"*si",
-	"*di",
-	"*bp",
-	"*sp",
-	"r8",
-	"r9",
-	"r10",
-	"r11",
-	"r12",
-	"r13",
-	"r14",
-	"r15"
-};
+#define ABP_CACHED_DISASM_SIZE		20
 
 CachedInst	AbpCachedDisasmedInstructions[ABP_CACHED_DISASM_SIZE];
 int			AbpDisasmedCacheIndex = 0;
@@ -145,7 +86,7 @@ INTERNAL_EXPORT void AbiEmptyInstructionCache()
 	AbpDisasmedCacheIndex = 0;
 }
 
-void AbpCacheInstruction(duint addr, BASIC_INSTRUCTION_INFO *inst)
+INTERNAL_EXPORT void AbiCacheInstruction(duint addr, BASIC_INSTRUCTION_INFO *inst)
 {
 	CachedInst *slot;
 
@@ -204,120 +145,6 @@ bool AbpRegisterDeferredAPIRegistration(const char *module, const char *api)
 	return true;
 }
 
-bool AbpParseRegister(char *regstr, LoadInstInfo *linst)
-{
-	char pfx = *regstr;
-	int beg = 0, end = 8, rx = -1;
-
-	char *tmp = NULL;
-
-	if (strstr(regstr, "0x"))
-	{
-#ifdef _WIN64
-		linst->imm = (duint)strtoull(regstr, NULL, 0);
-		linst->size = 64;
-#else
-		linst->imm = (duint)strtoul(regstr, NULL, 0);
-		linst->size = 32;
-#endif
-
-		return true;
-
-	}
-
-	linst->size = GET_REGSIZE(pfx);
-
-	if (pfx == 'r')
-	{
-		beg = 0;
-		end = 16;
-	}
-
-	for (;beg < end;beg++)
-	{
-		if (!strcmp(regstr + 1, regs[beg] + 1))
-		{
-			rx = beg;
-			break;
-		}
-	}
-
-	linst->reg = rx;
-
-	return rx >= 0;
-}
-
-
-bool AbpParseLoadInstruction(char *inst,LoadInstInfo *linst)
-{
-	const char *delims = " [],:";
-	char *p = strtok(inst, delims);
-	
-	char order = 0;
-
-	memset(linst, 0, sizeof(LoadInstInfo));
-
-	while (p != NULL && order != ORD_DONE)
-	{
-		if (order == ORD_OP)
-		{
-			if (!strcmp(p, "mov"))
-				linst->op = OP_MOV;
-			else if (!strcmp(p, "lea"))
-				linst->op = OP_LEA;
-			else if (!strcmp(p, "push"))
-				linst->op = OP_PUSH;
-			else
-				return false;
-
-			order++;
-		}
-		else if (order == ORD_DREG)
-		{
-			if (!strcmp(p, "byte") ||
-				!strcmp(p, "word") ||
-				!strcmp(p, "dword") ||
-				!strcmp(p, "qword"))
-			{
-				strtok(NULL, delims); //skip "ptr" token
-				p = strtok(NULL, delims); //skip segment if exist
-
-				if (p[1] == 's' && p[2] =='\0') //if segment identifier skip to the next token
-					p = strtok(NULL, delims); //grab register
-
-				if (!p)
-					return false;
-
-				linst->memstore = 1;
-			}
-
-			if (!AbpParseRegister(p, linst))
-				return false;
-
-			order++;
-		}
-
-		p = strtok(NULL, delims);
-
-		if (linst->memstore)
-		{
-			if (*p == '+')
-			{
-				p = strtok(NULL, delims);
-
-				if (!p)
-					return false;
-
-				linst->disp = (unsigned short)atoi(p);
-
-				p = strtok(NULL, delims);
-			}
-		}
-
-	}
-
-	return true;
-}
 
 INTERNAL_EXPORT duint AbpGetActualDataAddress(BASIC_INSTRUCTION_INFO *inst)
 {
@@ -360,7 +187,7 @@ bool AbpReadStringFromInstructionSourceAddress(BASIC_INSTRUCTION_INFO *inst, cha
 bool AbpGetApiStringFromProcLoader(short argNumber, char *nameBuf)
 {
 	CachedInst *inst;
-	LoadInstInfo loadinst;
+	InstInfo loadinst;
 	RegId compVal=RegNone;
 	int cacheIndex;
 
@@ -391,9 +218,9 @@ bool AbpGetApiStringFromProcLoader(short argNumber, char *nameBuf)
 	{
 		inst = AbpGetCachedInst(cacheIndex);
 
-		if (AbpParseLoadInstruction(inst->inst.instruction, &loadinst))
+		if (AbParseInstruction(&inst->inst, &loadinst))
 		{
-			if (loadinst.size == 64 && !loadinst.memstore)
+			if (loadinst.size == 64 && loadinst.mem_access == MA_READ)
 			{
 				switch (loadinst.op)
 				{
@@ -418,9 +245,9 @@ bool AbpGetApiStringFromProcLoader(short argNumber, char *nameBuf)
 					case OP_MOV:
 					case OP_LEA:
 					{
-						if (loadinst.reg == Sp && loadinst.memstore)
+						if (loadinst.reg == ImmMem && loadinst.mem_access == MA_WRITE && loadinst.memory_info.base == Sp)
 						{
-							if (loadinst.disp == (argNumber * 4))
+							if (loadinst.memory_info.disp == (argNumber * 4))
 							{
 								if (AbpReadStringFromInstructionSourceAddress(&inst->inst, nameBuf))
 									return true;
@@ -471,21 +298,19 @@ bool AbpIsValidApi(const char *module, const char *function, duint *rva)
 	duint imageBase;
 
 	bool valid = false;
-	char path[MAX_PATH];
-	int pathLen;
+	char path[3][MAX_PATH];
+	
+	GetSystemDirectoryA(path[0], MAX_PATH);
+	GetWindowsDirectoryA(path[1], MAX_PATH);
+	AbGetDebuggedModulePath(path[2], MAX_PATH);
 
-	pathLen = GetSystemDirectoryA(path, MAX_PATH);
-
-	if (!pathLen)
-		return false;
-
-
-	for (bool secondChance = true;;)
+	
+	for (int i=0;i<3;i++)
 	{
-		sprintf(path + pathLen, "\\%s", module);
+		sprintf(path[i] + strlen(path[i]), "\\%s", module);
 
 		moduleFile = CreateFileA(
-			path,
+			path[i],
 			GENERIC_READ,
 			FILE_SHARE_READ,
 			NULL,
@@ -494,14 +319,8 @@ bool AbpIsValidApi(const char *module, const char *function, duint *rva)
 			NULL
 		);
 
-		if (!secondChance || moduleFile != INVALID_HANDLE_VALUE)
+		if (moduleFile != INVALID_HANDLE_VALUE)
 			break;
-
-		if (moduleFile == INVALID_HANDLE_VALUE)
-		{
-			pathLen = GetWindowsDirectoryA(path, MAX_PATH);
-			secondChance = false;
-		}
 	}
 
 	if (moduleFile == INVALID_HANDLE_VALUE)
@@ -573,27 +392,43 @@ fail:
 	return valid;
 }
 
-duint AbpGetCallDestinationAddress(BASIC_INSTRUCTION_INFO *inst)
+INTERNAL_EXPORT duint AbiGetCallDestinationAddress(BASIC_INSTRUCTION_INFO *inst)
 {
 	duint callAddr = 0;
+	duint msize;
 
 	if ((inst->type & TYPE_ADDR) || (inst->type & TYPE_VALUE))
 		callAddr = inst->value.value;
 	else if (inst->type == TYPE_MEMORY)
-		DbgMemRead(inst->memory.value, &callAddr, inst->memory.size);
+	{
+		msize = inst->memory.size;
+
+		//Some process injects some chunk of data to the code section for some reason.
+		//And the disassembler interprets them as instruction sequences
+		//For example call fword ptr [mem]. And that memory size will be 6 bytes 
+		//Any read attempt on 32 bit machine the memory.value gets overflowed.
+
+		if (!(msize == size_byte ||
+				msize == size_word ||
+				msize == size_dword ||
+				msize == size_qword))
+		{
+			return 0;
+		}
+
+		DbgMemRead(inst->memory.value, &callAddr, msize);
+	}
 
 	return callAddr;
 }
 
 bool AbpIsAPICall2(duint code, ApiFunctionInfo *afi, BASIC_INSTRUCTION_INFO *inst, bool cacheInstruction)
 {
-	duint callAddr, trambolineAddr;
-
-	BASIC_INSTRUCTION_INFO destInst;
+	duint callAddr;
 
 	if (inst->call && inst->branch)
 	{
-		callAddr = AbpGetCallDestinationAddress(inst);
+		callAddr = AbiGetCallDestinationAddress(inst);
 
 		if (callAddr == afi->ownerModule->baseAddr + afi->rva)
 		{
@@ -602,26 +437,13 @@ bool AbpIsAPICall2(duint code, ApiFunctionInfo *afi, BASIC_INSTRUCTION_INFO *ins
 		}
 		else
 		{
-			DbgDisasmFastAt(callAddr, &destInst);
-
-			//We looking for only jmp. Eliminate other conditional jumps
-			if (!destInst.call && destInst.branch && HlpBeginsWithA(destInst.instruction,"jmp",FALSE,3))
-			{
-				trambolineAddr = AbpGetCallDestinationAddress(&destInst);
-
-				if (trambolineAddr == afi->ownerModule->baseAddr + afi->rva)
-				{
-					DBGPRINT("Indirect call (Tramboline) found for %s at 0x%p from 0x%p", 
-						afi->name, callAddr, trambolineAddr);
-
-					return true;
-				}
-			}
+			if (AbiIsIndirectCall(callAddr, afi, NULL))
+				return true;
 		}
 	}
 
 	if (cacheInstruction)
-		AbpCacheInstruction(code, inst);
+		AbiCacheInstruction(code, inst);
 
 	return false;
 }
@@ -644,7 +466,7 @@ bool AbpIsLoadLibraryXXXCall(ApiFunctionInfo **afiList, int afiCount,duint codeA
 	}
 
 	if (cacheInstruction)
-		AbpCacheInstruction(codeAddr, inst);
+		AbiCacheInstruction(codeAddr, inst);
 
 	return false;
 }
@@ -766,10 +588,7 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 	procafi = AbiGetAfi("kernel32.dll", "GetProcAddress");
 
 	if (AbGetSettings()->includeGetModuleHandle)
-	{
-		DBGPRINT("Included GetModuleHandle(A/W) !");
 		ldrVariantLimit = 6;
-	}
 	else
 		ldrVariantLimit = 4;
 
@@ -803,6 +622,7 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 
 			if (AbpIsLoadLibraryXXXCall(libafis, ldrVariantCount, code, &inst, true))
 			{
+				
 				memset(moduleName, 0, sizeof(moduleName));
 
 				skip = !AbpExposeStringArgument(1, moduleName);
@@ -879,6 +699,8 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 
 	if (totalFoundApi>0)
 		DBGPRINT("%d dynamic API(s) found!", totalFoundApi);
+
+	DBGPRINT("Dynamic scan finished");
 
 	return true;
 }

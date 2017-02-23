@@ -9,7 +9,6 @@
 #define SETSTATUS(x,...) this->SetControlTextFormatA(IDC_LBLSTATUS, "Status: " ## x, __VA_ARGS__)
 #define _SETSTATUS(x,...) _this->SetControlTextFormatA(IDC_LBLSTATUS, "Status: " ## x, __VA_ARGS__)
 
-
 class MainForm : public UiWrapper
 {
 private:
@@ -108,14 +107,13 @@ private:
 		FREESTRING(buffer);
 
 	}
-
+	
 	static void TraceCallerBreakpointCallback(BpCallbackContext *bpcb)
 	{
-		char *exeCmd;
+		int limit=20;
 		REGDUMP regContext;
 		BASIC_INSTRUCTION_INFO inst = { 0 };
 		duint callerIp;
-
 		duint sp;
 
 		if (!DbgGetRegDump(&regContext))
@@ -138,27 +136,40 @@ private:
 
 		sp = (duint)regContext.regcontext.csp;
 
-		DBGPRINT("Extracting caller from SP: %p", sp);
-
-		DbgMemRead(sp, &callerIp, sizeof(duint));
-		DBGPRINT("Next inst at: %p", callerIp);
-
-
-		callerIp--;
-
+		limit = 1000 / 20;
 		
-		while (!(inst.call && inst.branch))
+		//Another ugly hack here 
+		//x64dbg has a bug https://github.com/x64dbg/x64dbg/issues/1475
+		while (limit-- != 0)
 		{
-			DBGPRINT("Trying to get previous caller at %p", callerIp);
-			DbgDisasmFastAt(callerIp, &inst);
-			callerIp--;
+			if (!DbgMemRead(sp, &callerIp, sizeof(duint)))
+				Sleep(20);
+			else
+				break;
 		}
 
-		HlpPrintFormatBufferA(&exeCmd, "disasm %p", callerIp);
+		//Prevent to getting next call as previous caller
+		callerIp--;
+		limit = 20;
 
-		DbgCmdExecDirect(exeCmd);
+		while (!(inst.call && inst.branch))
+		{
+			DbgDisasmFastAt(callerIp, &inst);
+			callerIp--;
 
-		FREESTRING(exeCmd);
+			if (limit-- <= 0)
+			{
+				callerIp = 0;
+				break;
+			}
+		}
+
+		if (callerIp > 0)
+		{
+			callerIp++;
+			DBGPRINT("Caller of this API at %p", callerIp);
+			AbCmdExecFormat("disasm %p",callerIp);
+		}
 	}
 
 	static void ModuleEnumerator(LPCSTR modName,void *user)

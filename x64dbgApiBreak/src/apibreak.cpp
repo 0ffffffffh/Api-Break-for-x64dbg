@@ -79,8 +79,8 @@ bool AbpDeregisterModule(ModuleApiInfo *mai)
 	
 	for (apit = mai->apiList->begin(); apit != mai->apiList->end(); apit++)
 	{
-		if (apit->second->calls)
-			FREEOBJECT(apit->second->calls);
+		if (apit->second->callInfo.calls)
+			FREEOBJECT(apit->second->callInfo.calls);
 
 		FREEOBJECT(apit->second);
 	}
@@ -242,6 +242,26 @@ INTERNAL_EXPORT int AbiGetMainModuleCodeSections(ModuleSectionInfo **msi)
 	return sectCount;
 }
 
+bool AbCmdExecFormat(const char *format, ...)
+{
+	bool success = false;
+	char *buffer;
+	va_list va;
+
+	va_start(va, format);
+
+	if (HlpPrintFormatBufferExA(&buffer, format, va) > 0)
+	{
+		success = DbgCmdExec(buffer);
+
+		FREESTRING(buffer);
+	}
+
+	va_end(va);
+
+	return success;
+}
+
 bool AbGetDebuggedImageName(char *buffer)
 {
 	ModuleInfo mod;
@@ -263,6 +283,30 @@ bool AbGetDebuggedModuleInfo(ModuleInfo *modInfo)
 		return false;
 
 	return InfoFromAddr(mainModAddr, modInfo);
+}
+
+bool AbGetDebuggedModulePath(char *pathBuf, int bufLen)
+{
+	ModuleInfo mod;
+	duint dn;
+
+	if (!pathBuf)
+		return false;
+
+	if (!AbGetDebuggedModuleInfo(&mod))
+		return false;
+	
+	dn = strlen(mod.path);
+	
+	if (dn > bufLen)
+		return false;
+
+	strcpy(pathBuf, mod.path);
+	
+	while (pathBuf[--dn] != '\\')
+		pathBuf[dn] = 0;
+
+	return true;
 }
 
 duint AbGetDebuggedImageBase()
@@ -373,8 +417,8 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 	if (AbpModuleList.size() == 0 )
 	{
 		MessageBoxA(AbHwndDlgHandle, "The ApiBreak could not load any imports from the being debugged image.\r\n"
-			"Because, imports are treated as export by the x64dbg. (Its a x64dbg Bug)\r\n"
-			"Please update your x64dbg to version v2.5 Build snapshot_2017-02-05_20-52 (Feb 5 2017)",
+			"Because, imports are treated as export or could not load imports correctly by the x64dbg. (Its a x64dbg Bug)\r\n"
+			"Please update your x64dbg to latest version.",
 			"WARNING",
 			MB_OK | MB_ICONWARNING);
 
@@ -442,7 +486,7 @@ bool AbSetBreakpointOnCallers(const char *module, const char *apiFunction, int *
 	ApiFunctionInfo *afi;
 	int setBpCount = 0,sectCount;
 	int lastCallIndex = 0;
-
+	
 	sectCount = AbiGetMainModuleCodeSections(&msiList);
 
 	if (!sectCount)
@@ -459,26 +503,26 @@ bool AbSetBreakpointOnCallers(const char *module, const char *apiFunction, int *
 		return false;
 	}
 
-	if (afi->callCount > 0)
+	if (afi->callInfo.callCount > 0)
 		return true;
 
 	for (int i = 0;i < sectCount;i++)
 	{
-		lastCallIndex = afi->callCount;
+		lastCallIndex = afi->callInfo.callCount;
 
 		if (AbiSearchCallersForAFI(msiList[i].addr, msiList[i].size, afi) > 0)
 		{
-			for (int i = lastCallIndex;i < afi->callCount;i++)
+			for (int i = lastCallIndex;i < afi->callInfo.callCount;i++)
 			{
-				if (SetBreakpoint(afi->calls[i]))
+				if (SetBreakpoint(afi->callInfo.calls[i]))
 					setBpCount++;
 			}
 		}
 	}
 
 
-	if (afi->callCount - setBpCount > 0)
-		DBGPRINT("%d of %d bp not set", setBpCount, afi->callCount);
+	if (afi->callInfo.callCount - setBpCount > 0)
+		DBGPRINT("%d of %d bp not set", setBpCount, afi->callInfo.callCount);
 
 	if (bpRefCount != NULL)
 		*bpRefCount = setBpCount;

@@ -55,11 +55,23 @@ public:
 	{
 		switch (LOWORD(wp))
 		{
-		case IDC_BTNSAVESETTINGS:
-			SaveSettings(); //fall trough
-		case IDC_BTNDISCARDSETTINGS:
-			Close();
-			break;
+			case IDC_BTNSAVESETTINGS:
+				SaveSettings(); //fall trough
+			case IDC_BTNDISCARDSETTINGS:
+				Close();
+				break;
+			case IDC_CHKDETECTDYNLDR:
+			{
+				if (HIWORD(wp) == BN_CLICKED)
+				{
+					bool state = this->chkDetectDynLdr->GetState();
+
+					this->chkInclGetModHandle->SetState(state);
+					this->chkInclGetModHandle->SetEnableState(state);
+					
+				}
+				break;
+			}
 		}
 
 		UiWrapper::OnCommand(wp, lp);

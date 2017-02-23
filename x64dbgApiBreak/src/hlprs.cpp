@@ -83,17 +83,17 @@ LPSTR HlpWideToAnsiString(LPCWSTR str)
 	return NULL;
 }
 
-void  HlpTrimChar(LPSTR str, CHAR chr, int option)
+bool  HlpTrimChar(LPSTR str, CHAR chr, int option)
 {
 	char *p;
 	int len;
 	bool hasEndChr = false;
 
 	if (!str)
-		return;
+		return false;
 
 	if (!option)
-		return;
+		return false;
 
 	p = (char *)str;
 	len = (int)strlen(str);
@@ -108,11 +108,15 @@ void  HlpTrimChar(LPSTR str, CHAR chr, int option)
 		memmove(p, p + 1, len);
 
 		*(p + len) = 0;
+		return true;
 	}
 	else if (hasEndChr)
 	{
 		*(p + (len - 1)) = 0;
+		return true;
 	}
+
+	return false;
 }
 
 
@@ -132,9 +136,9 @@ bool HlpBeginsWithA(LPCSTR look, LPCSTR find,BOOL caseSens, LONG findLen)
 		return false;
 
 	if (caseSens)
-		return strncmp(look, find, findLen);
+		return strncmp(look, find, findLen) == 0;
 
-	return _strnicmp(look, find, findLen);
+	return _strnicmp(look, find, findLen) == 0;
 }
 
 bool HlpEndsWithA(LPCSTR look, LPCSTR find, BOOL caseSens, LONG findLen)
@@ -188,4 +192,26 @@ LONG HlpPrintFormatBufferA(LPSTR *buffer, LPCSTR format, ...)
 	va_end(vl);
 
 	return reqLen;
+}
+
+LONG HlpConcateStringFormatA(LPSTR buffer, LONG bufLen, LPCSTR format, ...)
+{
+	LONG currLen, remain,needLen;
+	va_list vl;
+	currLen = strlen(buffer);
+
+	remain = (bufLen-1) - currLen;
+
+	va_start(vl, format);
+
+	needLen = _vsnprintf(NULL, NULL, format, vl);
+
+	if (remain < needLen)
+		return 0;
+
+	vsprintf(buffer + currLen, format, vl);
+
+	va_end(vl);
+
+	return needLen;
 }

@@ -7,6 +7,9 @@
 #define INTERNAL_EXPORT FORWARDED
 #define INTERNAL 
 
+typedef unsigned char uchar;
+
+
 #define DBG_LIBEXPORT extern "C" __declspec(dllexport)
 
 #define DBGPRINT(s,...) HlpDebugPrint("ApiBreak: " s "\n",##__VA_ARGS__)

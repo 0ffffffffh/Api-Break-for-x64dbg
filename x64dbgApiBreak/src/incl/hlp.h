@@ -8,6 +8,7 @@
 #define HLP_TRIM_RIGHT		2
 #define HLP_TRIM_BOTH		(HLP_TRIM_LEFT | HLP_TRIM_RIGHT)
 
+
 void HlpDebugPrint(const char *format, ...);
 
 LPSTR HlpCloneStringA(LPCSTR str);
@@ -15,7 +16,7 @@ LPSTR HlpCloneStringA(LPCSTR str);
 LPWSTR HlpAnsiToWideString(LPCSTR str);
 LPSTR HlpWideToAnsiString(LPCWSTR str);
 
-void  HlpTrimChar(LPSTR str, CHAR chr, int option);
+bool  HlpTrimChar(LPSTR str, CHAR chr, int option);
 
 
 #define HlpRemoveQuotations(str) HlpTrimChar(str, '\"', HLP_TRIM_BOTH)
@@ -27,5 +28,7 @@ bool HlpEndsWithA(LPCSTR look, LPCSTR find, BOOL caseSens, LONG findLen);
 LONG HlpPrintFormatBufferExA(LPSTR *buffer, LPCSTR format, va_list vl);
 
 LONG HlpPrintFormatBufferA(LPSTR *buffer, LPCSTR format, ...);
+
+LONG HlpConcateStringFormatA(LPSTR buffer, LONG bufLen, LPCSTR format, ...);
 
 #endif // !__HELPER_H_

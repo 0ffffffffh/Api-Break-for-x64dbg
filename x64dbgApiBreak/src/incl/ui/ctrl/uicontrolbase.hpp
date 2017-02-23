@@ -53,6 +53,11 @@ public:
 		::EnableWindow(MyHandle(), TRUE);
 	}
 
+	void SetEnableState(bool enable)
+	{
+		::EnableWindow(MyHandle(), enable);
+	}
+
 	virtual void OnInitControl()
 	{
 
