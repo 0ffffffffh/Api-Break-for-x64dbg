@@ -8,6 +8,7 @@
 #define MN_ABOUT				MN_BASE
 #define MN_SHOWMAINFORM			MN_BASE + 1
 #define MN_SHOWSETTINGSFORM		MN_BASE + 2
+#define MN_TESTSLOT				MN_BASE + 3
 
 #define DWS_IDLE				0
 #define DWS_CREATEPROCESS		1
@@ -168,8 +169,13 @@ void __AbpInitMenu()
 	_plugin_menuaddentry(AbMenuHandle, MN_SHOWMAINFORM, "set an API breakpoint");
 	_plugin_menuaddentry(AbMenuHandle, MN_SHOWSETTINGSFORM, "settings");
 	_plugin_menuaddentry(AbMenuHandle, MN_ABOUT, "about?");
-	
+
+#if 1
+	_plugin_menuaddentry(AbMenuHandle, MN_TESTSLOT, "Test??");
+#endif
 }
+
+#include <structmemmap.h>
 
 DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
 {
@@ -202,6 +208,11 @@ DBG_LIBEXPORT void plugsetup(PLUG_SETUPSTRUCT* setupStruct)
 }
 
 
+#include <util.h>
+
+INTERNAL ApiFunctionInfo *AbiGetAfi(const char *module, const char *afiName);
+
+
 DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 {
 	if (info->hEntry == MN_ABOUT)
@@ -225,6 +236,28 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 		SettingsForm *settingsForm = new SettingsForm();
 		settingsForm->ShowDialog();
 	}
+#if 0
+	else if (info->hEntry == MN_TESTSLOT)
+	{
+		PPASSED_PARAMETER_CONTEXT par;
+		WORD tc;
+		ApiFunctionInfo *afi;
+		PFNSIGN fnSign;
+
+		__debugbreak();
+
+		SmmParseFromFileW(L"main.abtf", &tc);
+
+		UtlExtractPassedParameters(7, Fastcall, &par);
+
+		SmmGetFunctionSignature("kernel32.dll", "CreateFileW", &fnSign);
+
+		afi = AbiGetAfi("kernel32.dll", "CreateFileW");
+
+		SmmMapFunctionCall(par, fnSign, afi);
+
+	}
+#endif
 }
 
 

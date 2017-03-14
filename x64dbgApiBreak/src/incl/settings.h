@@ -8,6 +8,7 @@ typedef struct
 	bool exposeDynamicApiLoads;
 	bool includeGetModuleHandle;
 	bool autoLoadData;
+	bool scanAggressive;
 
 }Settings;
 

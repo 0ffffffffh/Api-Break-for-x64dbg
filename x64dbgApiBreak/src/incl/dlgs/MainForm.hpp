@@ -136,17 +136,7 @@ private:
 
 		sp = (duint)regContext.regcontext.csp;
 
-		limit = 1000 / 20;
-		
-		//Another ugly hack here 
-		//x64dbg has a bug https://github.com/x64dbg/x64dbg/issues/1475
-		while (limit-- != 0)
-		{
-			if (!DbgMemRead(sp, &callerIp, sizeof(duint)))
-				Sleep(20);
-			else
-				break;
-		}
+		AbMemReadGuaranteed(sp, &callerIp, sizeof(duint));
 
 		//Prevent to getting next call as previous caller
 		callerIp--;

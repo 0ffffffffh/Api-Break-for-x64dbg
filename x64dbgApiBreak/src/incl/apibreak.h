@@ -69,6 +69,7 @@ typedef struct __BpCallbackContext
 	duint						bpAddr;
 	BRIDGEBP *					bp;
 	AB_BREAKPOINT_CALLBACK		callback;
+	ApiFunctionInfo				*afi;
 	void *						user;
 }BpCallbackContext;
 

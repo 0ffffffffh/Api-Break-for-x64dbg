@@ -31,4 +31,9 @@ LONG HlpPrintFormatBufferA(LPSTR *buffer, LPCSTR format, ...);
 
 LONG HlpConcateStringFormatA(LPSTR buffer, LONG bufLen, LPCSTR format, ...);
 
+LONG HlpPathFromFilenameA(LPSTR fileName, LPSTR path, LONG pathBufSize);
+
+LONG HlpPathFromFilenameW(LPWSTR fileName, LPWSTR path, LONG pathBufSize);
+
+
 #endif // !__HELPER_H_

@@ -13,6 +13,8 @@ typedef unsigned char uchar;
 #define DBG_LIBEXPORT extern "C" __declspec(dllexport)
 
 #define DBGPRINT(s,...) HlpDebugPrint("ApiBreak: " s "\n",##__VA_ARGS__)
+#define DBGPRINT2(s,...) HlpDebugPrint("ApiBreak: %s\n",##__VA_ARGS__)
+#define _DBGPRINT(s,...) HlpDebugPrint(s,##__VA_ARGS__)
 
 
 #define NOTIMPLEMENTED() HlpDebugPrint(__FUNCTION__ " not implemented yet")
@@ -26,15 +28,15 @@ typedef unsigned char uchar;
 #define ALLOCSTRINGW(size) (LPWSTR)AbMemoryAlloc(sizeof(WCHAR) * ((size)+1))
 #define ALLOCSTRINGA(size) (LPSTR)AbMemoryAlloc(sizeof(CHAR) * ((size)+1))
 
-#define FREESTRING(str) AbMemoryFree(str)
+#define FREESTRING(str) AbMemoryFree((void *)str)
 
 
 
 #define _stringfy(x) #x
 
 #define AB_VERSION_MAJOR 0
-#define AB_VERSION_MINOR 3
-#define AB_VERSION_BUILD 25
+#define AB_VERSION_MINOR 4
+#define AB_VERSION_BUILD 28
 
 #if _WIN64
 #define AB_PLATFORM		"x64"

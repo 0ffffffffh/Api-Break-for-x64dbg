@@ -183,11 +183,13 @@
     <ClInclude Include="src\incl\hlp.h" />
     <ClInclude Include="src\incl\instparse.h" />
     <ClInclude Include="src\incl\settings.h" />
+    <ClInclude Include="src\incl\structmemmap.h" />
     <ClInclude Include="src\incl\ui\ctrl\uicheckbox.hpp" />
     <ClInclude Include="src\incl\ui\ctrl\uicombobox.hpp" />
     <ClInclude Include="src\incl\ui\ctrl\uicontrolbase.hpp" />
     <ClInclude Include="src\incl\ui\ui.h" />
     <ClInclude Include="src\incl\ui\uiwrapper.hpp" />
+    <ClInclude Include="src\incl\util.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\apibreak.cpp" />
@@ -197,8 +199,10 @@
     <ClCompile Include="src\instparse.cpp" />
     <ClCompile Include="src\plugin.cpp" />
     <ClCompile Include="src\settings.cpp" />
+    <ClCompile Include="src\structmemmap.cpp" />
     <ClCompile Include="src\syslib.cpp" />
     <ClCompile Include="src\ui\ui.cpp" />
+    <ClCompile Include="src\util.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res.rc">

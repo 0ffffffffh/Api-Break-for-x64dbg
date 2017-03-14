@@ -3,6 +3,7 @@
 #include <pluginsdk/_scriptapi_debug.h>
 #include <pluginsdk/bridgemain.h>
 #include <settings.h>
+#include <structmemmap.h>
 
 using namespace Script::Module;
 using namespace Script::Symbol;
@@ -541,6 +542,8 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
 	ApiFunctionInfo *afi = NULL;
 	BpCallbackContext *cbctx = NULL;
 	duint bpAddr = 0;
+	PFNSIGN fnSign = NULL;
+	BASIC_INSTRUCTION_INFO instr;
 
 	afi = AbiGetAfi(module, apiFunction);
 
@@ -556,8 +559,21 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
 		if (!cbctx)
 			return false;
 
+		if (SmmGetFunctionSignature(module, apiFunction, &fnSign))
+		{
+			if (SmmSigHasOutArgument(fnSign))
+			{
+				DBGPRINT("%s has out argument. Breakpoint will be set after the API call to get out argument result.",
+					apiFunction);
+
+				DbgDisasmFastAt(bpAddr, &instr);
+				bpAddr += instr.size;
+			}
+		}
+
 		cbctx->bpAddr = bpAddr;
 		cbctx->callback = bpCallback;
+		cbctx->afi = afi;
 		cbctx->user = user;
 
 		if (!AbRegisterBpCallback(cbctx))

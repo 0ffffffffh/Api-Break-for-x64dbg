@@ -505,12 +505,6 @@ bool AbParseInstruction(BASIC_INSTRUCTION_INFO *inst, InstInfo *linst)
 		p = Nexttoken(&tokdata);
 
 	}
-
-#if _DEBUG
-	//_PRSLOG("Parsed: %s", inst->instruction);
-	//__AbpPrintInstructionInfo(linst);
-#endif
-
 	
 	return true;
 }

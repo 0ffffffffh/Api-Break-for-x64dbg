@@ -215,3 +215,61 @@ LONG HlpConcateStringFormatA(LPSTR buffer, LONG bufLen, LPCSTR format, ...)
 
 	return needLen;
 }
+
+LONG HlpPathFromFilenameA(LPSTR fileName, LPSTR path, LONG pathBufSize)
+{
+	char c;
+	LONG pathLen = 0,i=0;
+	LPSTR pathPtr = path;
+
+	while ((c = *(fileName + i)) != 0)
+	{
+		if (c == '\\')
+			pathLen = i;
+
+		i++;
+
+		if (i >= pathBufSize)
+			return 0;
+
+		*pathPtr++ = c;
+	}
+
+	if (pathLen == 0 && i > 0)
+		return i;
+
+	pathLen++;
+
+	path[pathLen] = 0;
+
+	return pathLen;
+}
+
+LONG HlpPathFromFilenameW(LPWSTR fileName, LPWSTR path, LONG pathBufSize)
+{
+	wchar_t c;
+	LONG pathLen = 0, i = 0;
+	LPWSTR pathPtr = path;
+
+	while ((c = *(fileName + i)) != 0)
+	{
+		if (c == '\\')
+			pathLen = i;
+
+		i++;
+
+		if (i >= pathBufSize)
+			return 0;
+
+		*pathPtr++ = c;
+	}
+
+	if (pathLen == 0 && i > 0)
+		return i;
+
+	pathLen++;
+
+	path[pathLen] = 0;
+
+	return pathLen;
+}
