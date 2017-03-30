@@ -35,10 +35,23 @@ typedef struct __DMA
 	LONG				needsSynchronize;
 	BOOL				ownershipTaken;
 	CRITICAL_SECTION	areaGuard;
+	DWORD				oldProtect;
+    struct
+    {
+        ULONG           offset;
+        ARCHWIDE        size;
+        ULONG           beginCookie;
+        ULONG           endCookie;
+    }UnsafeWriteCheckInfo;
 	void *				memory;
 }*PDMA,DMA; //DYNAMIC MEMORY ADAPTER
 
+#define DMA_AUTO_OFFSET ULONG_MAX
+
+
 BOOL DmaCreateAdapter(WORD sizeOfType, ULONG initialCount, PDMA *dma);
+
+BOOL DmaWriteNeedsExpand(PDMA dma, ARCHWIDE needByteSize, ULONG writeBeginOffset, BOOL autoIssue);
 
 BOOL DmaIssueExpansion(PDMA dma, LONG expansionDelta);
 
@@ -46,17 +59,27 @@ BOOL DmaRead(PDMA dma, ULONG offset, ARCHWIDE size, void *destMemory);
 
 BOOL DmaWrite(PDMA dma, ULONG offset, ARCHWIDE size, void *srcMemory);
 
+BOOL DmaStringWriteA(PDMA dma, LPCSTR format,...);
+
+BOOL DmaStringWriteW(PDMA dma, LPCWSTR format, ...);
+
 BOOL DmaReadTypeAlignedSequence(PDMA dma, ULONG index, ULONG count, void *destMemory);
 
-BOOL DmaCopyWrittenMemory(PDMA dma, void *destMemory, BOOL allocForDest);
-
 BOOL DmaTakeMemoryOwnership(PDMA dma, void **nativeMem);
+
+BOOL DmaPrepareForDirectWrite(PDMA dma, ULONG writeOffset, ARCHWIDE writeSize);
+
+BOOL DmaPrepareForRead(PDMA dma, void **nativeMem);
 
 void DmaDestroyAdapter(PDMA dma);
 
 
+BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, PPASSED_PARAMETER_CONTEXT *paramInfo);
 
-BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, PPASSED_PARAMETER_CONTEXT *paramInfo);
+duint UtlGetCallerAddress(REGDUMP *regdump);
 
+BOOL UtlInternetReadW(LPCWSTR url, BYTE **content, ULONG *contentLength);
+
+BOOL UtlInternetReadA(LPCSTR url, BYTE **content, ULONG *contentLength);
 
 #endif // !__UTIL_H__

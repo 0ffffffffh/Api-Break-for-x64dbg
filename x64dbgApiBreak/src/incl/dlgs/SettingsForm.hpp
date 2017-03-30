@@ -9,7 +9,8 @@
 class SettingsForm : public UiWrapper
 {
 private:
-	UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle,*chkAutoload;
+	UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle,
+        *chkAutoload,*chkMapCallctx;
 
 	void FillGui()
 	{
@@ -18,6 +19,7 @@ private:
 		this->chkDetectDynLdr->SetState(settings->exposeDynamicApiLoads);
 		this->chkInclGetModHandle->SetState(settings->includeGetModuleHandle);
 		this->chkAutoload->SetState(settings->autoLoadData);
+        this->chkMapCallctx->SetState(settings->mapCallContext);
 	}
 
 	void GetFromGUI()
@@ -26,6 +28,7 @@ private:
 		setting->exposeDynamicApiLoads = this->chkDetectDynLdr->GetState();
 		setting->includeGetModuleHandle = this->chkInclGetModHandle->GetState();
 		setting->autoLoadData = this->chkAutoload->GetState();
+        setting->mapCallContext = this->chkMapCallctx->GetState();
 	}
 
 	bool LoadSettings()
@@ -84,6 +87,7 @@ public:
 		this->chkDetectDynLdr = GetControlById<UiCheckBox>(IDC_CHKDETECTDYNLDR);
 		this->chkInclGetModHandle = GetControlById<UiCheckBox>(IDC_CHKINSPGETMODULEHANDLE);
 		this->chkAutoload = GetControlById<UiCheckBox>(IDC_CHKAUTOLOAD);
+        this->chkMapCallctx = GetControlById<UiCheckBox>(IDC_CHKMAPCALLCTX);
 
 		LoadSettings();
 

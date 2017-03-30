@@ -16,7 +16,7 @@ void *AbMemoryRealloc(void *memPtr, int newSize)
 	if (!memPtr)
 		return AbMemoryAlloc(newSize);
 
-	return HeapReAlloc(GetProcessHeap(), 0, memPtr, newSize);
+	return HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, memPtr, newSize);
 }
 
 void AbMemoryFree(void *memPtr)

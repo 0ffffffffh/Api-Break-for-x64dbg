@@ -12,6 +12,9 @@ typedef unsigned char uchar;
 
 #define DBG_LIBEXPORT extern "C" __declspec(dllexport)
 
+#define BIGERROR(msg) DBGPRINT(msg); \
+                     __debugbreak()
+
 #define DBGPRINT(s,...) HlpDebugPrint("ApiBreak: " s "\n",##__VA_ARGS__)
 #define DBGPRINT2(s,...) HlpDebugPrint("ApiBreak: %s\n",##__VA_ARGS__)
 #define _DBGPRINT(s,...) HlpDebugPrint(s,##__VA_ARGS__)
@@ -30,7 +33,11 @@ typedef unsigned char uchar;
 
 #define FREESTRING(str) AbMemoryFree((void *)str)
 
-
+#if _DEBUG
+#define DBGBREAK __debugbreak
+#else
+#define DBGBREAK
+#endif
 
 #define _stringfy(x) #x
 

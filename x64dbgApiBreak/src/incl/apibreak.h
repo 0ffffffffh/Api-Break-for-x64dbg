@@ -20,6 +20,9 @@
 #include <pluginsdk/_plugins.h>
 #include <pluginsdk/TitanEngine/TitanEngine.h>
 #include <pluginsdk/_scriptapi_module.h>
+#include <pluginsdk/_scriptapi_debug.h>
+#include <pluginsdk/_scriptapi_register.h>
+
 
 #include <unordered_map>
 #include <vector>
@@ -68,10 +71,22 @@ typedef struct __BpCallbackContext
 {
 	duint						bpAddr;
 	BRIDGEBP *					bp;
+    REGDUMP                     regContext;
 	AB_BREAKPOINT_CALLBACK		callback;
 	ApiFunctionInfo				*afi;
+    BOOL                        backTrack;
 	void *						user;
 }BpCallbackContext;
+
+#define BPO_NONE                0
+#define BPO_BACKTRACK           1
+#define BPO_SINGLESHOT          2
+
+void AbDebuggerRun();
+
+void AbDebuggerPause();
+
+void AbDebuggerWaitUntilPaused();
 
 bool AbCmdExecFormat(const char *format, ...);
 
@@ -93,14 +108,17 @@ int AbEnumModuleNames(APIMODULE_ENUM_PROC enumProc, void *user);
 
 void AbEnumApiFunctionNames(APIMODULE_ENUM_PROC enumProc, const char *moduleName, void *user);
 
-bool AbSetBreakpointOnCallers(const char *module, const char *apiFunction, int *bpRefCount);
+bool AbSetAPIBreakpointOnCallers(const char *module, const char *apiFunction);
 
-bool AbSetBreakpoint(const char *module, const char *apiFunction, duint *funcAddr);
+bool AbSetAPIBreakpoint(const char *module, const char *apiFunction, duint *funcAddr);
 
-bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcAddr, AB_BREAKPOINT_CALLBACK bpCallback, void *user);
+bool AbSetInstructionBreakpoint(duint instrAddr, AB_BREAKPOINT_CALLBACK callback, void *user, bool singleShot);
+
+bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcAddr, DWORD bpo, AB_BREAKPOINT_CALLBACK bpCallback, void *user);
 
 bool AbRegisterBpCallback(BpCallbackContext *cbctx);
 
 void AbDeregisterBpCallback(BpCallbackContext *cbctx);
+
 
 #endif // !__APIBREAK_H__

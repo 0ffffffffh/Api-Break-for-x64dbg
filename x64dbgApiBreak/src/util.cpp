@@ -1,5 +1,7 @@
 #include <util.h>
+#include <winhttp.h>
 
+#pragma comment(lib,"Winhttp.lib")
 
 BOOL UtlpExtractPassedParameters(PPASSED_PARAMETER_CONTEXT paramInfo)
 {
@@ -53,11 +55,7 @@ BOOL UtlpExtractPassedParameters(PPASSED_PARAMETER_CONTEXT paramInfo)
 	}
 
 #else
-	if (paramInfo->convention == Cdecl)
-		csp = regs->regcontext.csp;
-	else
-		csp = regs->regcontext.csp - paramInfo->paramCount * sizeof(duint);
-
+	csp = regs->regcontext.csp;
 	offset = 0;
 
 	for (int i = 0;i < paramInfo->paramCount;i++)
@@ -105,6 +103,23 @@ BOOL DmaCreateAdapter(WORD sizeOfType, ULONG initialCount, PDMA *dma)
 	return TRUE;
 }
 
+BOOL DmaWriteNeedsExpand(PDMA dma, ARCHWIDE needByteSize, ULONG writeBeginOffset, BOOL autoIssue)
+{
+    BOOL needed;
+
+    if (writeBeginOffset == DMA_AUTO_OFFSET)
+        writeBeginOffset = dma->writeBoundary;
+
+    needed = needByteSize > dma->totalSize - writeBeginOffset;
+
+    if (needed && autoIssue)
+        DmaIssueExpansion(dma, needByteSize / dma->sizeOfType);
+
+    return needed;
+}
+
+
+
 BOOL DmaIssueExpansion(PDMA dma, LONG expansionDelta)
 {
 	BOOL isReducing = expansionDelta < 0;
@@ -117,10 +132,13 @@ BOOL DmaIssueExpansion(PDMA dma, LONG expansionDelta)
 
 	dma->memory = AbMemoryRealloc(dma->memory, (dma->count + expansionDelta) * dma->sizeOfType);
 	dma->count += expansionDelta;
+	dma->totalSize = dma->count * dma->sizeOfType;
 
 	InterlockedCompareExchange((volatile LONG *)&dma->needsSynchronize, FALSE, TRUE);
 	LeaveCriticalSection(&dma->areaGuard);
 
+
+	return TRUE;
 }
 
 #define DmapNeedsSynch(pdma) InterlockedCompareExchange((volatile LONG *)&pdma->needsSynchronize, FALSE, FALSE)
@@ -130,15 +148,25 @@ BOOL DmaIssueExpansion(PDMA dma, LONG expansionDelta)
 BOOL DmapMemIo(PDMA dma, ULONG offset, ARCHWIDE size, void *mem, BOOL write)
 {
 	ARCHWIDE realAddr;
-
+	ULONG requiredCount;
 	void *source, *dest;
 
-	if (offset == 0 && dma->writeBoundary > 0)
+	if (offset == DMA_AUTO_OFFSET)
 		offset = dma->writeBoundary;
+
+	requiredCount = (size / dma->sizeOfType) + 1;
+
+	if (write && dma->oldProtect != 0)
+	{
+		if (!VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, dma->oldProtect, &dma->oldProtect))
+			return FALSE;
+
+		dma->oldProtect = 0;
+	}
 
 	if (write && offset + size > dma->totalSize)
 	{
-		if (!DmaIssueExpansion(dma, (dma->count / 3)))
+		if (!DmaIssueExpansion(dma, requiredCount + (dma->count / 3)))
 			return FALSE;
 	}
 
@@ -156,7 +184,7 @@ BOOL DmapMemIo(PDMA dma, ULONG offset, ARCHWIDE size, void *mem, BOOL write)
 	}
 
 	
-	if (!DmapIsAccessValid(dma, realAddr, size))
+	if (!DmapIsAccessValid(dma, offset, size))
 		return FALSE;
 
 	memcpy(dest, source, size);
@@ -209,6 +237,48 @@ BOOL DmaWrite(PDMA dma, ULONG offset, ARCHWIDE size, void *srcMemory)
 	return success;
 }
 
+BOOL DmaStringWriteA(PDMA dma, LPCSTR format, ...)
+{
+	BOOL success = FALSE;
+	LPSTR buffer = NULL;
+	LONG len = 0;
+	va_list va;
+	va_start(va, format);
+
+	len = HlpPrintFormatBufferExA(&buffer, format, va);
+
+	if (len > 0)
+	{
+		success = DmaWrite(dma, DMA_AUTO_OFFSET, len * sizeof(char), buffer);
+		FREESTRING(buffer);
+	}
+
+	va_end(va);
+
+	return success;
+}
+
+BOOL DmaStringWriteW(PDMA dma, LPCWSTR format, ...)
+{
+	BOOL success = FALSE;
+	LPWSTR buffer = NULL;
+	LONG len = 0;
+	va_list va;
+	va_start(va, format);
+
+	len = HlpPrintFormatBufferExW(&buffer, format, va);
+
+	if (len > 0)
+	{
+		success = DmaWrite(dma, DMA_AUTO_OFFSET, len * sizeof(wchar_t), buffer);
+		FREESTRING(buffer);
+	}
+
+	va_end(va);
+
+	return success;
+}
+
 BOOL DmaReadTypeAlignedSequence(PDMA dma, ULONG index, ULONG count, void *destMemory)
 {
 	ARCHWIDE offset,size;
@@ -246,8 +316,52 @@ BOOL DmaTakeMemoryOwnership(PDMA dma, void **nativeMem)
 	return TRUE;
 }
 
+BOOL DmaPrepareForDirectWrite(PDMA dma, ULONG writeOffset, ARCHWIDE writeSize, void **nativeMem)
+{
+    if (dma->UnsafeWriteCheckInfo.offset)
+        return FALSE;
+
+    if (!DmapIsAccessValid(dma, writeOffset, writeSize))
+        return FALSE;
+
+    /*
+    dma->UnsafeWriteCheckInfo.offset = writeOffset;
+    dma->UnsafeWriteCheckInfo.size = writeSize;
+
+    if (writeOffset < sizeof(ULONG))
+    {
+    }
+
+    */
+
+    NOTIMPLEMENTED();
+
+    return FALSE;
+}
+
+void DmaEndDirectWrite(PDMA dma)
+{
+    NOTIMPLEMENTED();
+}
+
+BOOL DmaPrepareForRead(PDMA dma, void **nativeMem)
+{
+	BOOL success = VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, PAGE_READONLY, &dma->oldProtect);
+
+	if (success)
+		*nativeMem = dma->memory;
+
+	return success;
+}
+
 void DmaDestroyAdapter(PDMA dma)
 {
+	if (!dma)
+		return;
+
+	if (dma->oldProtect != 0)
+		VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, dma->oldProtect, &dma->oldProtect);
+
 	if (!dma->ownershipTaken)
 		AbMemoryFree(dma->memory);
 
@@ -259,7 +373,7 @@ void DmaDestroyAdapter(PDMA dma)
 
 //UTILITY FUNCS
 
-BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, PPASSED_PARAMETER_CONTEXT *paramInfo)
+BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, PPASSED_PARAMETER_CONTEXT *paramInfo)
 {
 	PPASSED_PARAMETER_CONTEXT ppi = NULL;
 
@@ -271,12 +385,7 @@ BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, PPAS
 	ppi->paramCount = paramCount;
 	ppi->convention = callConv;
 
-	if (!DbgGetRegDump(&ppi->regCtx))
-	{
-		DBGPRINT("REGDUMP failed");
-		FREEOBJECT(ppi);
-		return FALSE;
-	}
+    memcpy(&ppi->regCtx, regdump, sizeof(REGDUMP));
 
 	if (!UtlpExtractPassedParameters(ppi))
 	{
@@ -287,4 +396,177 @@ BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, PPAS
 	*paramInfo = ppi;
 
 	return TRUE;
+}
+
+duint UtlGetCallerAddress(REGDUMP *regdump)
+{
+    int limit = 20;
+    BASIC_INSTRUCTION_INFO inst = { 0 };
+    duint callerIp;
+    duint sp;
+
+    sp = (duint)regdump->regcontext.csp;
+
+    AbMemReadGuaranteed(sp, &callerIp, sizeof(duint));
+
+    //Prevent to getting next call as previous caller
+    callerIp--;
+    limit = 20;
+
+    while (!(inst.call && inst.branch))
+    {
+        DbgDisasmFastAt(callerIp, &inst);
+        callerIp--;
+
+        if (limit-- <= 0)
+        {
+            callerIp = 0;
+            break;
+        }
+    }
+
+    if (callerIp > 0)
+    {
+        callerIp++;
+        DBGPRINT("Caller of this API at %p", callerIp);
+
+        return callerIp;
+    }
+
+    return 0;
+}
+
+BOOL UtlInternetReadA(LPCSTR url, BYTE **content, ULONG *contentLength)
+{
+    BOOL result;
+    LPWSTR urlW = HlpAnsiToWideString(url);
+
+    if (!urlW)
+        return FALSE;
+
+    result = UtlInternetReadW(urlW, content, contentLength);
+
+    FREESTRING(urlW);
+    
+    return result;
+}
+
+BOOL UtlInternetReadW(LPCWSTR url, BYTE **content, ULONG *contentLength)
+{
+    HINTERNET session=NULL, connection=NULL, reqHandle=NULL;
+    INTERNET_PORT port;
+    BOOL result;
+    DWORD reqFlag = WINHTTP_FLAG_REFRESH;
+    DWORD availData = 0, readData = 0, totalReadSize = 0;
+    PDMA dma;
+    BYTE *readBuffer = NULL;
+    DWORD readbufSize = 0x1000;
+    URL_COMPONENTS urlComp;
+    WCHAR hostName[128], objectName[64];
+
+    port = HlpBeginsWithW(url, L"https", TRUE, 5) ? 443 : 80;
+
+    if (port == 443)
+        reqFlag |= WINHTTP_FLAG_SECURE;
+
+    session = WinHttpOpen(
+        L"Mozilla/5.0 (Windows NT 10.0; WOW64; rv:51.0) Gecko/20100101 Firefox/51.0",
+        WINHTTP_ACCESS_TYPE_NO_PROXY,
+        NULL,
+        NULL,
+        0
+    );
+
+
+    if (!session)
+        return FALSE;
+
+    // Specify an HTTP server.
+
+    memset(&urlComp, 0, sizeof(urlComp));
+
+    urlComp.dwHostNameLength = (DWORD)-1;
+    urlComp.lpszHostName = hostName;
+
+    urlComp.dwUrlPathLength = (DWORD)-1;
+    urlComp.lpszUrlPath = objectName;
+
+    urlComp.dwStructSize = sizeof(urlComp);
+
+    WinHttpCrackUrl(url, wcslen(url), 0, &urlComp);
+
+    connection = WinHttpConnect(session, hostName, port, 0);
+
+    if (!connection)
+        goto exit;
+
+    // Create an HTTP request handle.
+    reqHandle = WinHttpOpenRequest(connection, L"GET", objectName,
+        NULL, WINHTTP_NO_REFERER,
+        WINHTTP_DEFAULT_ACCEPT_TYPES,
+        reqFlag);
+
+    if (!reqHandle)
+        goto exit;
+
+    result = WinHttpSendRequest(reqHandle,
+        WINHTTP_NO_ADDITIONAL_HEADERS,
+        0, WINHTTP_NO_REQUEST_DATA, 0,
+        0, 0);
+
+    if (!result)
+        goto exit;
+
+    result = WinHttpReceiveResponse(reqHandle, NULL);
+
+    if (!result)
+        goto exit;
+
+    if (!DmaCreateAdapter(sizeof(BYTE), 0x1000, &dma))
+        goto exit;
+
+    readBuffer = (BYTE *)AbMemoryAlloc(readbufSize);
+
+    while(1)
+    {
+        if (!WinHttpQueryDataAvailable(reqHandle, &availData))
+            break;
+
+        if (!availData)
+            break;
+
+        if (availData > readbufSize)
+        {
+            readBuffer = (BYTE *)AbMemoryRealloc(readBuffer, readbufSize + 0x1000);
+            readbufSize += 0x1000;
+
+        }
+
+        if (WinHttpReadData(reqHandle, readBuffer, availData, &readData))
+        {
+            DmaWrite(dma, DMA_AUTO_OFFSET, readData, readBuffer);
+            *readBuffer = 0;
+            totalReadSize += readData;
+        }
+
+
+    }
+
+
+    AbMemoryFree(readBuffer);
+
+exit:
+    if (reqHandle) WinHttpCloseHandle(reqHandle);
+    if (connection) WinHttpCloseHandle(connection);
+    if (session) WinHttpCloseHandle(session);
+
+    if (totalReadSize > 0)
+    {
+        DmaTakeMemoryOwnership(dma, (void **)content);
+        *contentLength = totalReadSize;
+    }
+    
+    DmaDestroyAdapter(dma);
+
+    return totalReadSize > 0;
 }

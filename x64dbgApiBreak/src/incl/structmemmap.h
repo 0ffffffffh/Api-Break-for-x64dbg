@@ -16,6 +16,10 @@ BOOL SmmMapMemory(void *memory, ULONG size, const char *typeName);
 
 BOOL SmmGetFunctionSignature(const char *module, const char *function, PFNSIGN *signInfo);
 
+BOOL SmmGetFunctionSignature2(ApiFunctionInfo *afi, PFNSIGN *signInfo);
+
+SHORT SmmGetArgumentCount(PFNSIGN signInfo);
+
 BOOL SmmSigHasOutArgument(PFNSIGN signInfo);
 
 BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount);
@@ -23,5 +27,7 @@ BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount);
 BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount);
 
 BOOL SmmParseFromFileA(LPCSTR fileName, WORD *typeCount);
+
+VOID SmmReleaseResources();
 
 #endif // !__STRUCTMEMMAP_H__

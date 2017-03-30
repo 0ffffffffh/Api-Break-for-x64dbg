@@ -119,49 +119,168 @@ bool  HlpTrimChar(LPSTR str, CHAR chr, int option)
 	return false;
 }
 
+void HlppMemMoveSecure(BYTE *memSrc, BYTE *memDest, ULONG moveSize)
+{
+    memmove(memDest, memSrc, moveSize);
+}
+
+#include <util.h>
+
+bool HlpReplaceStringW(LPWSTR string, ULONG stringMaxSize, LPCWSTR find, LPCWSTR replace)
+{
+    bool result = false;
+    ULONG temp=0, foundIndex=0;
+    ULONG findLen, replLen;
+    LPWSTR px;
+    LONG shiftDelta;
+    PDMA dma;
+
+    if (!DmaCreateAdapter(sizeof(ULONG), 20, &dma))
+        return false;
+
+    findLen = wcslen(find);
+    replLen = wcslen(replace);
+
+    
+    shiftDelta = replLen - findLen;
+
+    while(1)
+    {
+        px = wcsstr(string, find);
+        
+        if (!px)
+            break;
+
+        foundIndex = px - string;
+
+        DmaWrite(dma, DMA_AUTO_OFFSET, sizeof(ULONG), &foundIndex);
+
+        temp++;
+    }
+
+    if (!temp)
+        goto exit;
+
+    if (shiftDelta > 0)
+    {
+        if ((shiftDelta * temp) > stringMaxSize)
+            goto exit;
+    }
+
+    for (int i = 0;i < temp;temp++)
+    {
+        DmaReadTypeAlignedSequence(dma, i, 1, &foundIndex);
+
+        px = string + foundIndex + findLen;
+
+        HlppMemMoveSecure((BYTE *)px, (BYTE *)(px + shiftDelta), stringMaxSize - (foundIndex + findLen + 1));
+    }
+
+exit:
+
+    DmaDestroyAdapter(dma);
+
+    return result;
+}
+
+bool HlpReplaceStringA(LPSTR string, ULONG stringMaxSize, LPCSTR find, LPCSTR replace)
+{
+    bool result;
+    LPWSTR stringW = HlpAnsiToWideString(string);
+    LPWSTR bufStringW = NULL;
+    LPWSTR findW, replaceW;
+
+    bufStringW = ALLOCSTRINGW(stringMaxSize);
+
+    wcscpy(bufStringW, stringW);
+
+    FREESTRING(stringW);
+
+    findW = HlpAnsiToWideString(find);
+    replaceW = HlpAnsiToWideString(replace);
+
+    result = HlpReplaceStringW(bufStringW, stringMaxSize, findW, replaceW);
+
+    FREESTRING(findW);
+    FREESTRING(replaceW);
+
+    return result;
+}
 
 bool HlpBeginsWithA(LPCSTR look, LPCSTR find,BOOL caseSens, LONG findLen)
 {
-	int lookLen;
+    bool result;
 
-	if (!look || !find)
-		return false;
+    LPWSTR lookW = HlpAnsiToWideString(look);
+    LPWSTR findW = HlpAnsiToWideString(find);
 
-	if (findLen <= 0)
-		return false;
-	
-	lookLen = (int)strlen(look);
 
-	if (lookLen < findLen)
-		return false;
+    result = HlpBeginsWithW(lookW, findW, caseSens, findLen);
 
-	if (caseSens)
-		return strncmp(look, find, findLen) == 0;
+    FREESTRING(lookW);
+    FREESTRING(findW);
 
-	return _strnicmp(look, find, findLen) == 0;
+    return result;
+}
+
+bool HlpBeginsWithW(LPCWSTR look, LPCWSTR find, BOOL caseSens, LONG findLen)
+{
+    int lookLen;
+
+    if (!look || !find)
+        return false;
+
+    if (findLen <= 0)
+        return false;
+
+    lookLen = (int)wcslen(look);
+
+    if (lookLen < findLen)
+        return false;
+
+    if (caseSens)
+        return wcsncmp(look, find, findLen) == 0;
+
+    return _wcsnicmp(look, find, findLen) == 0;
 }
 
 bool HlpEndsWithA(LPCSTR look, LPCSTR find, BOOL caseSens, LONG findLen)
 {
-	int lookLen;
+    bool result;
 
-	if (!look || !find)
-		return false;
+    LPWSTR lookW = HlpAnsiToWideString(look);
+    LPWSTR findW = HlpAnsiToWideString(find);
 
-	if (findLen <= 0)
-		return false;
 
-	lookLen = (int)strlen(look);
+    result = HlpEndsWithW(lookW, findW, caseSens, findLen);
 
-	if (lookLen < findLen)
-		return false;
+    FREESTRING(lookW);
+    FREESTRING(findW);
 
-	look += lookLen - findLen;
+    return result;
+}
 
-	if (caseSens)
-		return strcmp(look, find) == 0;
+bool HlpEndsWithW(LPCWSTR look, LPCWSTR find, BOOL caseSens, LONG findLen)
+{
+    int lookLen;
 
-	return _stricmp(look, find) == 0;
+    if (!look || !find)
+        return false;
+
+    if (findLen <= 0)
+        return false;
+
+    lookLen = (int)wcslen(look);
+
+    if (lookLen < findLen)
+        return false;
+
+    look += lookLen - findLen;
+
+    if (caseSens)
+        return wcscmp(look, find) == 0;
+
+    return _wcsicmp(look, find) == 0;
 }
 
 LONG HlpPrintFormatBufferExA(LPSTR *buffer, LPCSTR format, va_list vl)
@@ -194,6 +313,37 @@ LONG HlpPrintFormatBufferA(LPSTR *buffer, LPCSTR format, ...)
 	return reqLen;
 }
 
+
+LONG HlpPrintFormatBufferExW(LPWSTR *buffer, LPCWSTR format, va_list vl)
+{
+	int reqLen = 0;
+
+	reqLen = _vsnwprintf(NULL, NULL, format, vl);
+
+	*buffer = ALLOCSTRINGW(reqLen);
+
+	if (*buffer == NULL)
+		return false;
+
+	_vsnwprintf(*buffer, reqLen + 1, format, vl);
+
+	return reqLen;
+}
+
+LONG HlpPrintFormatBufferW(LPWSTR *buffer, LPCWSTR format, ...)
+{
+	va_list vl;
+	int reqLen;
+
+	va_start(vl, format);
+
+	reqLen = HlpPrintFormatBufferExW(buffer, format, vl);
+
+	va_end(vl);
+
+	return reqLen;
+}
+
 LONG HlpConcateStringFormatA(LPSTR buffer, LONG bufLen, LPCSTR format, ...)
 {
 	LONG currLen, remain,needLen;
@@ -216,15 +366,16 @@ LONG HlpConcateStringFormatA(LPSTR buffer, LONG bufLen, LPCSTR format, ...)
 	return needLen;
 }
 
-LONG HlpPathFromFilenameA(LPSTR fileName, LPSTR path, LONG pathBufSize)
+LONG HlpPathFromFilenameA(LPSTR fileName, LPSTR path, LONG pathBufSize, CHAR sep)
 {
 	char c;
 	LONG pathLen = 0,i=0;
 	LPSTR pathPtr = path;
 
+    
 	while ((c = *(fileName + i)) != 0)
 	{
-		if (c == '\\')
+		if (c == sep)
 			pathLen = i;
 
 		i++;
@@ -245,7 +396,7 @@ LONG HlpPathFromFilenameA(LPSTR fileName, LPSTR path, LONG pathBufSize)
 	return pathLen;
 }
 
-LONG HlpPathFromFilenameW(LPWSTR fileName, LPWSTR path, LONG pathBufSize)
+LONG HlpPathFromFilenameW(LPWSTR fileName, LPWSTR path, LONG pathBufSize, WCHAR sep)
 {
 	wchar_t c;
 	LONG pathLen = 0, i = 0;
@@ -253,7 +404,7 @@ LONG HlpPathFromFilenameW(LPWSTR fileName, LPWSTR path, LONG pathBufSize)
 
 	while ((c = *(fileName + i)) != 0)
 	{
-		if (c == '\\')
+		if (c == sep)
 			pathLen = i;
 
 		i++;

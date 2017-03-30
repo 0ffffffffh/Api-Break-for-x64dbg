@@ -9,7 +9,7 @@ typedef struct
 	bool includeGetModuleHandle;
 	bool autoLoadData;
 	bool scanAggressive;
-
+    bool mapCallContext;
 }Settings;
 
 bool AbSettingsLoad();

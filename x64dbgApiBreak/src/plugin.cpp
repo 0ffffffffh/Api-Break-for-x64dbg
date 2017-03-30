@@ -25,6 +25,7 @@ const char *DBGSTATE_STRINGS[5] =
 	"Process Detached"
 };
 
+
 BYTE								AbpDbgState;
 Script::Module::ModuleInfo			AbpCurrentMainModule;
 BOOL								AbpNeedsReload=FALSE;
@@ -36,6 +37,8 @@ INTERNAL int		AbMenuDisasmHandle;
 INTERNAL int		AbMenuDumpHandle;
 INTERNAL int		AbMenuStackHandle;
 INTERNAL HMODULE	AbPluginModule;
+
+INTERNAL WORD       AbParsedTypeCount = 0;
 
 INTERNAL void AbiRaiseDeferredLoader(const char *dllName, duint base);
 
@@ -205,6 +208,13 @@ DBG_LIBEXPORT void plugsetup(PLUG_SETUPSTRUCT* setupStruct)
 	AbMenuStackHandle = setupStruct->hMenuStack;
 
 	__AbpInitMenu();
+
+    if (SmmParseFromFileW(L"E:\\main.abtf", &AbParsedTypeCount))
+    {
+        DBGPRINT("%d type(s) parsed.", AbParsedTypeCount);
+    }
+
+
 }
 
 
@@ -227,7 +237,7 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 	}
 	else if (info->hEntry == MN_SHOWMAINFORM)
 	{
-		//Ps. MainForm automatically deletes itself when the window closed.
+		//Ps. Form object will be deleted automatically when the window closed.
 		MainForm *mainForm = new MainForm();
 		mainForm->ShowDialog();
 	}
@@ -236,26 +246,9 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
 		SettingsForm *settingsForm = new SettingsForm();
 		settingsForm->ShowDialog();
 	}
-#if 0
+#if 1
 	else if (info->hEntry == MN_TESTSLOT)
 	{
-		PPASSED_PARAMETER_CONTEXT par;
-		WORD tc;
-		ApiFunctionInfo *afi;
-		PFNSIGN fnSign;
-
-		__debugbreak();
-
-		SmmParseFromFileW(L"main.abtf", &tc);
-
-		UtlExtractPassedParameters(7, Fastcall, &par);
-
-		SmmGetFunctionSignature("kernel32.dll", "CreateFileW", &fnSign);
-
-		afi = AbiGetAfi("kernel32.dll", "CreateFileW");
-
-		SmmMapFunctionCall(par, fnSign, afi);
-
 	}
 #endif
 }
@@ -283,17 +276,131 @@ DBG_LIBEXPORT void CBSYSTEMBREAKPOINT(CBTYPE cbType, PLUG_CB_SYSTEMBREAKPOINT *s
 	}
 }
 
+PPASSED_PARAMETER_CONTEXT AbpExtractPassedParameterContext(REGDUMP *regdump, PFNSIGN fnSign)
+{
+    SHORT argCount;
+    PPASSED_PARAMETER_CONTEXT ppc;
+    CALLCONVENTION conv;
+    
+    argCount = SmmGetArgumentCount(fnSign);
+
+#ifdef _WIN64
+    conv = Fastcall;
+#else
+    conv = Stdcall;
+#endif
+
+    if (!UtlExtractPassedParameters(argCount, conv, regdump, &ppc))
+    {
+        DBGPRINT("Parameter extraction failed");
+        return NULL;
+    }
+
+    return ppc;
+}
+
+
+void AbpGhostBreakpointHandler(BpCallbackContext *bpx)
+{
+    DBGPRINT("BREAKPOINT TRAP");
+    bpx->user = (void *)0xDEADBEEF;
+}
+
+LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
+{
+    PFNSIGN fnSign;
+    BOOL willContinue = FALSE;
+    PPASSED_PARAMETER_CONTEXT ppc=NULL;
+    BASIC_INSTRUCTION_INFO instr;
+    duint addr;
+    char msgBuf[512];
+
+    char *nativeData;
+
+    BpCallbackContext *bpcb = (BpCallbackContext *)p;
+    
+    sprintf(msgBuf, "One of the parameters of the %s is marked as out. "
+        "That Means, you need to execute the api, to get all parameter result correct.\n\n"
+        "Want to execute the API now?",bpcb->afi->name);
+
+    willContinue = MessageBoxA(NULL, msgBuf, "Quest", MB_ICONQUESTION | MB_YESNO) == IDYES;
+
+    
+    if (willContinue)
+    {
+        ppc = (PPASSED_PARAMETER_CONTEXT)bpcb->user;
+
+        //Is it alreadly backtraced for caller?
+        if (!bpcb->backTrack)
+        {
+            //if not, we must do that.
+            addr = UtlGetCallerAddress(&bpcb->regContext);
+
+            DbgDisasmFastAt(addr, &instr);
+
+            addr += instr.size;
+
+            if (!AbSetInstructionBreakpoint(addr, AbpGhostBreakpointHandler, bpcb,true))
+            {
+                DBGPRINT("Bpx set failed");
+                return EXIT_FAILURE;
+            }
+        }
+
+        AbDebuggerRun();
+        AbDebuggerWaitUntilPaused();
+
+        SmmGetFunctionSignature2(bpcb->afi, &fnSign);
+
+        SmmMapFunctionCall(ppc, fnSign, bpcb->afi);
+
+    }
+
+
+
+    return EXIT_SUCCESS;
+}
+
 DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 {
 	BpCallbackContext *bpcb = NULL;
-
+    PPASSED_PARAMETER_CONTEXT ppc;
+    PFNSIGN fnSign = NULL;
+    
 	bpcb = AbpLookupBpCallback(info->breakpoint->addr);
 
 	if (bpcb != NULL)
 	{
-		DBGPRINT("Special bp found. Raising breakpoint callback");
-		bpcb->bp = info->breakpoint;
-		bpcb->callback(bpcb);
+		DBGPRINT("Special breakpoint detected. Raising the breakpoint callback");
+
+        //get current register context for current state
+        DbgGetRegDump(&bpcb->regContext);
+
+        bpcb->bp = info->breakpoint;
+
+        
+        if (bpcb->callback != NULL)
+            bpcb->callback(bpcb);
+
+        
+        if (AbGetSettings()->mapCallContext)
+        {
+            if (SmmGetFunctionSignature2(bpcb->afi, &fnSign))
+            {
+                DBGPRINT("Function mapping signature found. Mapping...");
+
+                ppc = AbpExtractPassedParameterContext(&bpcb->regContext, fnSign);
+                
+                if (SmmSigHasOutArgument(fnSign))
+                {
+                    DBGPRINT("%s has an out marked function. ",bpcb->afi->name);
+                    bpcb->user = ppc;
+                    QueueUserWorkItem((LPTHREAD_START_ROUTINE)AbpShowOutputArgumentQuestion, bpcb, WT_EXECUTELONGFUNCTION);
+                }
+                else
+                    SmmMapFunctionCall(ppc, fnSign, bpcb->afi);
+            }
+        }
 	}
 	else
 	{
@@ -307,8 +414,6 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 
 DBG_LIBEXPORT void CBCREATEPROCESS(CBTYPE cbType, PLUG_CB_CREATEPROCESS *newProc)
 {
-	//If a process is attached the debuggers calls this callback after the ATTACHED?
-	//So if previously mode is attached we dont need to change state. Let it stay attached
 	if (AbpDbgState == DWS_ATTACHEDPROCESS)
 	{
 		//get module info. cuz we cant get the modinfo from in the attach callback 

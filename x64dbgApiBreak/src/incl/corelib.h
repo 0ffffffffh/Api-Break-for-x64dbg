@@ -19,6 +19,9 @@ static bool AbMemReadGuaranteed(duint va, void *dest, duint size)
 	bool success = false;
 	int limit = 1000 / 20;
 
+    if (!AbHasDebuggingProcess())
+        return false;
+
 	//Another ugly hack here 
 	//x64dbg has a bug https://github.com/x64dbg/x64dbg/issues/1475
 	while (limit-- != 0)

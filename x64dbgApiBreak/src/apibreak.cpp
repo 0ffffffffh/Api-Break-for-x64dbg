@@ -8,6 +8,7 @@
 using namespace Script::Module;
 using namespace Script::Symbol;
 using namespace Script::Debug;
+using namespace Script::Register;
 
 
 modlist		AbpModuleList;
@@ -242,6 +243,22 @@ INTERNAL_EXPORT int AbiGetMainModuleCodeSections(ModuleSectionInfo **msi)
 
 	return sectCount;
 }
+
+void AbDebuggerRun()
+{
+    Script::Debug::Run();
+}
+
+void AbDebuggerPause()
+{
+    Script::Debug::Pause();
+}
+
+void AbDebuggerWaitUntilPaused()
+{
+    _plugin_waituntilpaused();
+}
+
 
 bool AbCmdExecFormat(const char *format, ...)
 {
@@ -481,76 +498,121 @@ void AbEnumApiFunctionNames(APIMODULE_ENUM_PROC enumProc, const char *moduleName
 		enumProc(n->second->name, user);
 }
 
-bool AbSetBreakpointOnCallers(const char *module, const char *apiFunction, int *bpRefCount)
+bool AbpReturnToCaller(duint callerIp, duint csp)
 {
-	ModuleSectionInfo *msiList;
-	ApiFunctionInfo *afi;
-	int setBpCount = 0,sectCount;
-	int lastCallIndex = 0;
-	
-	sectCount = AbiGetMainModuleCodeSections(&msiList);
+    RegisterEnum cspReg, cipReg;
 
-	if (!sectCount)
-	{
-		DBGPRINT("cant get code section.");
-		return false;
-	}
+#ifdef _WIN64
+    cspReg = RegisterEnum::RSP;
+    cipReg = RegisterEnum::RIP;
+#else
+    cspReg = RegisterEnum::ESP;
+    cipReg = RegisterEnum::EIP;
+#endif
 
-	afi = AbiGetAfi(module, apiFunction);
+    //pop stack
+    if (!Set(cspReg, csp + sizeof(duint)))
+        return false;
 
-	if (!afi)
-	{
-		DBGPRINT("'%s' not found", apiFunction);
-		return false;
-	}
-
-	if (afi->callInfo.callCount > 0)
-		return true;
-
-	for (int i = 0;i < sectCount;i++)
-	{
-		lastCallIndex = afi->callInfo.callCount;
-
-		if (AbiSearchCallersForAFI(msiList[i].addr, msiList[i].size, afi) > 0)
-		{
-			for (int i = lastCallIndex;i < afi->callInfo.callCount;i++)
-			{
-				if (SetBreakpoint(afi->callInfo.calls[i]))
-					setBpCount++;
-			}
-		}
-	}
-
-
-	if (afi->callInfo.callCount - setBpCount > 0)
-		DBGPRINT("%d of %d bp not set", setBpCount, afi->callInfo.callCount);
-
-	if (bpRefCount != NULL)
-		*bpRefCount = setBpCount;
-
-	return setBpCount > 0;
+    //set the previous caller address to the Instruction pointer
+    return Set(cipReg, callerIp);
 }
 
-bool AbSetBreakpoint(const char *module, const char *apiFunction, duint *funcAddr)
+void AbpCallback0(__BpCallbackContext *bpx)
 {
-	return AbSetBreakpointEx(module, apiFunction, funcAddr, NULL,NULL);
+    return;
 }
 
-bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcAddr, AB_BREAKPOINT_CALLBACK bpCallback, void *user)
+void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
+{
+    REGDUMP regContext;
+    duint callerIp;
+
+    if (!DbgGetRegDump(&regContext))
+    {
+        DBGPRINT("Register context could not get");
+        return;
+    }
+
+    switch (bpx->bp->type)
+    {
+    case bp_normal:
+    case bp_memory:
+    case bp_dll:
+        break;
+    default:
+        return;
+    }
+
+    callerIp = UtlGetCallerAddress(&regContext);
+
+    if (callerIp > 0)
+    {   
+        //refresh the reg dump data of the bp context
+        memcpy(&bpx->regContext, &regContext, sizeof(REGDUMP));
+        
+        AbpReturnToCaller(callerIp, regContext.regcontext.csp);
+        AbCmdExecFormat("disasm %p", callerIp);
+    }
+
+}
+
+bool AbSetAPIBreakpointOnCallers(const char *module, const char *apiFunction)
+{
+    duint addr;
+
+    return AbSetBreakpointEx(
+            module, 
+            apiFunction, 
+            &addr, 
+            BPO_BACKTRACK,
+            (AB_BREAKPOINT_CALLBACK)AbpBacktrackingBreakpointCallback, 
+            NULL
+        );
+
+}
+
+bool AbSetAPIBreakpoint(const char *module, const char *apiFunction, duint *funcAddr)
+{
+	return AbSetBreakpointEx(module, apiFunction, funcAddr, BPO_NONE, (AB_BREAKPOINT_CALLBACK)AbpCallback0,NULL);
+}
+
+bool AbSetInstructionBreakpoint(duint instrAddr, AB_BREAKPOINT_CALLBACK callback, void *user, bool singleShot)
+{
+    DWORD opt = BPO_NONE;
+
+    if (singleShot)
+        opt |= BPO_SINGLESHOT;
+
+    return AbSetBreakpointEx(NULL, NULL, &instrAddr, opt, callback, user);
+}
+
+bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcAddr, DWORD bpo, AB_BREAKPOINT_CALLBACK bpCallback, void *user)
 {
 	bool bpSet;
 	ApiFunctionInfo *afi = NULL;
 	BpCallbackContext *cbctx = NULL;
 	duint bpAddr = 0;
-	PFNSIGN fnSign = NULL;
-	BASIC_INSTRUCTION_INFO instr;
+    bool isNonApiBp;
 
-	afi = AbiGetAfi(module, apiFunction);
+    isNonApiBp = module == NULL && apiFunction == NULL;
 
-	if (!afi)
-		return false;
+    if (!isNonApiBp)
+    {
+        afi = AbiGetAfi(module, apiFunction);
 
-	bpAddr = afi->ownerModule->baseAddr + afi->rva;
+        if (!afi)
+            return false;
+
+        bpAddr = afi->ownerModule->baseAddr + afi->rva;
+    }
+    else
+    {
+        if (*funcAddr == NULL)
+            return false;
+
+        bpAddr = *funcAddr;
+    }
 
 	if (bpCallback != NULL)
 	{
@@ -559,18 +621,7 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
 		if (!cbctx)
 			return false;
 
-		if (SmmGetFunctionSignature(module, apiFunction, &fnSign))
-		{
-			if (SmmSigHasOutArgument(fnSign))
-			{
-				DBGPRINT("%s has out argument. Breakpoint will be set after the API call to get out argument result.",
-					apiFunction);
-
-				DbgDisasmFastAt(bpAddr, &instr);
-				bpAddr += instr.size;
-			}
-		}
-
+        cbctx->backTrack = bpo & BPO_BACKTRACK == BPO_BACKTRACK;
 		cbctx->bpAddr = bpAddr;
 		cbctx->callback = bpCallback;
 		cbctx->afi = afi;
@@ -583,8 +634,12 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
 		}
 	}
 
-	bpSet = SetBreakpoint(bpAddr);
+    if (bpo & BPO_SINGLESHOT)
+        bpSet = AbCmdExecFormat("bp %p, abss, ss", bpAddr);
+    else
+        bpSet = SetBreakpoint(bpAddr);
 
+    
 	if (!bpSet)
 	{
 		AbDeregisterBpCallback(cbctx);
@@ -592,8 +647,11 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
 		return false;
 	}
 
-	if (bpSet && funcAddr != NULL)
-		*funcAddr = afi->ownerModule->baseAddr + afi->rva;
+    if (!isNonApiBp)
+    {
+        if (bpSet && funcAddr != NULL)
+            *funcAddr = afi->ownerModule->baseAddr + afi->rva;
+    }
 
 	return bpSet;
 }

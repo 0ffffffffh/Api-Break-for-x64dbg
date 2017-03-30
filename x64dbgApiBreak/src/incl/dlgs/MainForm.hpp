@@ -13,20 +13,7 @@ class MainForm : public UiWrapper
 {
 private:
 	UiComboBox *cbModules, *cbApis;
-	UiControlBase *chkUseXref, *lblStatus, *chkTraceBack;
-
-	void ToggleTracebackState()
-	{
-		bool checked = (bool)chkUseXref->SendControlMsg(BM_GETCHECK, NULL, NULL);
-
-		if (checked)
-		{
-			chkTraceBack->SendControlMsg(BM_SETCHECK, BST_UNCHECKED, NULL);
-			chkTraceBack->Disable();
-		}
-		else
-			chkTraceBack->Enable();
-	}
+	UiControlBase *chkUseXref, *lblStatus;
 
 	void InvalidateApiFunctionList()
 	{
@@ -45,16 +32,14 @@ private:
 		char funcName[256] = { 0 };
 		LPSTR buffer;
 		duint apiAddr;
-		int refCount = 0;
 		bool isSet;
-		bool bpOnXrefs = false, traceBack = false;
+        bool bpOnXrefs = false;
 
 		GetControlTextA(IDC_CBAPIFUNC, funcName, sizeof(funcName));
 		GetControlTextA(IDC_CBMODULELIST, moduleName, sizeof(moduleName));
 
 		bpOnXrefs = (bool)chkUseXref->SendControlMsg(BM_GETCHECK, NULL, NULL);
-		traceBack = (bool)chkTraceBack->SendControlMsg(BM_GETCHECK, NULL, NULL);
-
+		
 		if (!HlpPrintFormatBufferA(&buffer, "Going to set a BP at %s!%s\r\nis that ok?", moduleName, funcName))
 		{
 			MsgBoxError("Memory error", "error");
@@ -65,31 +50,18 @@ private:
 		{
 			if (bpOnXrefs)
 			{
-				isSet = AbSetBreakpointOnCallers(moduleName, funcName,&refCount);
+				isSet = AbSetAPIBreakpointOnCallers(moduleName, funcName);
 
 				if (isSet)
-				{
-					FREESTRING(buffer);
-					HlpPrintFormatBufferA(&buffer, "Api breakpoints set on %d api xrefs.", refCount);
-					MsgBoxInfo(buffer, "ok");
-				}
+                    MsgBoxInfo("Api breakpoint set", "ok");
 				else
 					MsgBoxError("Bp could not be set", "error");
 
 			}
 			else
 			{
-				if (traceBack)
-				{
-					isSet = AbSetBreakpointEx(
-						moduleName, 
-						funcName, 
-						&apiAddr, 
-						(AB_BREAKPOINT_CALLBACK)TraceCallerBreakpointCallback, 
-						NULL);
-				}
-				else
-					isSet = AbSetBreakpoint(moduleName, funcName, &apiAddr);
+                
+                isSet = AbSetAPIBreakpoint(moduleName, funcName, &apiAddr);
 
 				if (isSet)
 				{
@@ -106,60 +78,6 @@ private:
 
 		FREESTRING(buffer);
 
-	}
-	
-	static void TraceCallerBreakpointCallback(BpCallbackContext *bpcb)
-	{
-		int limit=20;
-		REGDUMP regContext;
-		BASIC_INSTRUCTION_INFO inst = { 0 };
-		duint callerIp;
-		duint sp;
-
-		if (!DbgGetRegDump(&regContext))
-		{
-			DBGPRINT("Register context could not get");
-			return;
-		}
-
-
-
-		switch (bpcb->bp->type)
-		{
-		case bp_normal:
-		case bp_memory:
-		case bp_dll:
-			break;
-		default:
-			return;
-		}
-
-		sp = (duint)regContext.regcontext.csp;
-
-		AbMemReadGuaranteed(sp, &callerIp, sizeof(duint));
-
-		//Prevent to getting next call as previous caller
-		callerIp--;
-		limit = 20;
-
-		while (!(inst.call && inst.branch))
-		{
-			DbgDisasmFastAt(callerIp, &inst);
-			callerIp--;
-
-			if (limit-- <= 0)
-			{
-				callerIp = 0;
-				break;
-			}
-		}
-
-		if (callerIp > 0)
-		{
-			callerIp++;
-			DBGPRINT("Caller of this API at %p", callerIp);
-			AbCmdExecFormat("disasm %p",callerIp);
-		}
 	}
 
 	static void ModuleEnumerator(LPCSTR modName,void *user)
@@ -225,10 +143,6 @@ public :
 			break;
 			case IDC_CHKBPONXREFS:
 			{
-				if (HIWORD(wp) == BN_CLICKED)
-				{
-					ToggleTracebackState();
-				}
 			}
 			break;
 		}
@@ -243,7 +157,6 @@ public :
 		this->cbModules = GetControlById<UiComboBox>(IDC_CBMODULELIST);
 		this->cbApis = GetControlById<UiComboBox>(IDC_CBAPIFUNC);
 		this->chkUseXref = GetControlById<UiControlBase>(IDC_CHKBPONXREFS);
-		this->chkTraceBack = GetControlById<UiControlBase>(IDC_CHKDETECTCALLER);
 		this->lblStatus = GetControlById<UiControlBase>(IDC_LBLSTATUS);
 
 		DisableControl(IDC_BTNSETBP);

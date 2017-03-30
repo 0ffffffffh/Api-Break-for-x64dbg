@@ -5,12 +5,13 @@
 #define ABP_DOUBLE_VALUE	2
 #define ABP_STRING_VALUE	3
 
-#define ABP_SETTING_COUNT	4
+#define ABP_SETTING_COUNT	5
 
 #define ABS_EXPOSEDYNLDR	0
 #define ABS_GETMODHANDLE	1
 #define ABS_AUTOLOAD		2
 #define ABS_SCANAGGRESSIVE	3
+#define ABS_MAPCALLCONTEXT  4
 
 
 struct {
@@ -21,7 +22,8 @@ struct {
 	{"ExposeDynLoads",ABP_BOOL_VALUE},
 	{"InclGetModHandle",ABP_BOOL_VALUE},
 	{"Autoload", ABP_BOOL_VALUE},
-	{"Scanaggrs", ABP_BOOL_VALUE}
+	{"Scanaggrs", ABP_BOOL_VALUE},
+    {"Mapcallctx",ABP_BOOL_VALUE}
 };
 
 #define STNG_LOAD(id,val) AbpGetSetting(AbpSettingList[id].key,(char *)val,AbpSettingList[id].type)
@@ -111,6 +113,9 @@ bool AbSettingsLoad()
 	if (!STNG_LOAD(ABS_SCANAGGRESSIVE, &AbpSettings.scanAggressive))
 		AbpSettings.scanAggressive = false;
 
+    if (!STNG_LOAD(ABS_MAPCALLCONTEXT, &AbpSettings.mapCallContext))
+        AbpSettings.mapCallContext = false;
+
 	return true;
 }
 
@@ -127,6 +132,9 @@ bool AbSettingsSave()
 
 	if (!STNG_SAVE(ABS_SCANAGGRESSIVE, AbpSettings.scanAggressive))
 		return false;
+
+    if (!STNG_SAVE(ABS_MAPCALLCONTEXT, AbpSettings.mapCallContext))
+        return false;
 
 	return true;
 }

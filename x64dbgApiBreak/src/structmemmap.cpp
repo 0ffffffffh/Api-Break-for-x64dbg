@@ -46,95 +46,103 @@
 
 typedef struct __SLISTNODE
 {
-	struct __SLISTNODE *next;
-	void *				value;
+	struct __SLISTNODE *		next;
+	void *						value;
 }*PSLISTNODE, SLISTNODE;
 
 typedef struct
 {
-	PSLISTNODE			head;
-	PSLISTNODE			tail;
-	LONG				count;
+	PSLISTNODE					head;
+	PSLISTNODE					tail;
+	LONG						count;
 }*PSLIST, SLIST;
 
 //TYPED MEMORY MAP
 
-typedef void(*CONVERTER_METHOD)(char *, void *);
+typedef void(*CONVERTER_METHOD)(char *, void *, bool);
 
 typedef struct
 {
-	WORD				cbSize;
-	char				typeName[MAX_TYPENAME_SIZE];
+	WORD						cbSize;
+	char						typeName[MAX_TYPENAME_SIZE];
 }*PGENERIC_DATATYPE_INFO;
 
 typedef struct
 {
-	WORD				cbSize;
-	char				typeName[MAX_TYPENAME_SIZE];
-	WORD				size;
-	BOOL				isSigned;
-	WORD				linkIndex;
-	CONVERTER_METHOD	method;
+	WORD						cbSize;
+	char						typeName[MAX_TYPENAME_SIZE];
+	WORD						size;
+	BOOL						isSigned;
+	WORD						linkIndex;
+	CONVERTER_METHOD			method;
 }*PPRIMITIVETYPEINFO, PRIMITIVETYPEINFO;
 
 
-#define ListOf(x) PSLIST
+#define SmmListOf(x) PSLIST
 
 typedef struct
 {
-	WORD					cbSize;
-	char					name[MAX_TYPENAME_SIZE];
-	DWORD					structSize;
-	ListOf(PTYPEINFOFIELD)	fields;
+	WORD					    cbSize;
+	char					    name[MAX_TYPENAME_SIZE];
+	DWORD					    structSize;
+	SmmListOf(PTYPEINFOFIELD)   fields;
 }*PSTRUCTINFO, STRUCTINFO;
 
 typedef struct
 {
 
-	char				fieldName[128];
-	WORD				arrSize;
-	BOOL				isArray;
-	BOOL				isPointer;
-	BOOL				isStruct;
+	char				        fieldName[128];
+	WORD				        arrSize;
+	BOOL				        isArray;
+	BOOL				        isPointer;
+	BOOL                        isStruct;
 
 	union
 	{
-		PPRIMITIVETYPEINFO	primitiveType;
-		PSTRUCTINFO			structType;
+		PPRIMITIVETYPEINFO	    primitiveType;
+		PSTRUCTINFO			    structType;
 	}type;
 
 }*PTYPEINFOFIELD, TYPEINFOFIELD;
 
 typedef struct
 {
-	char					name[64];
-	BOOL					isStructure;
-	BOOL					isPointer;
-	BOOL					isOutArg;
+	char					    name[64];
+	BOOL					    isStructure;
+	BOOL					    isPointer;
+	BOOL					    isOutArg;
 	union
 	{
-		PVOID				holder;
-		PSTRUCTINFO			structInfo;
-		PPRIMITIVETYPEINFO	primitiveInfo;
+		PVOID				    holder;
+		PSTRUCTINFO			    structInfo;
+		PPRIMITIVETYPEINFO	    primitiveInfo;
 	}typeInfo;
 }*PARGINFO, ARGINFO;
 
 typedef struct __FNSIGN
 {
-	char					name[256];
-	char					module[256];
-	PARGINFO				args;
-	SHORT					argCount;
-	BOOL					hasOutArg;
+	char					    name[256];
+	char					    module[256];
+	PARGINFO				    args;
+	SHORT					    argCount;
+	BOOL					    hasOutArg;
 }*PFNSIGN, FNSIGN;
 
 typedef struct
 {
-	const char *			identName;
-	PPRIMITIVETYPEINFO		pti;
+	const char *			    identName;
+	PPRIMITIVETYPEINFO		    pti;
 }typeidents;
 
-
+#define SMMP_WORKDIR_STACKSIZE  10
+typedef struct
+{
+    struct {
+        BOOL    isLocal;
+        WCHAR   workDir[MAX_PATH];
+    }Stack[SMMP_WORKDIR_STACKSIZE];
+    WORD        spi;
+}WORKDIR_STACK;
 
 static typeidents TYPE_IDENTS[] =
 {
@@ -150,11 +158,14 @@ static typeidents TYPE_IDENTS[] =
 	{ "ulong",NULL },
 	{ "long64",NULL },
 	{ "ulong64",NULL },
+	//SPECIALS
 	{ "string",NULL },
 	{ "wstring",NULL },
-	{ "pointer",NULL }
+	{ "pointer",NULL },
+	{ "archex", NULL }
 };
 
+#define SMM_SPECIAL_PRIMITIVE_COUNT 4
 static struct {
 	const char *	alias;
 	int				index;
@@ -167,9 +178,15 @@ static struct {
 };
 
 #define MAX_TYPE_IDENTS				sizeof(TYPE_IDENTS) / sizeof(typeidents)
-#define MAX_USABLE_TYPE_IDENTS		(MAX_TYPE_IDENTS - 3)
+#define MAX_USABLE_TYPE_IDENTS		(MAX_TYPE_IDENTS - SMM_SPECIAL_PRIMITIVE_COUNT)
 
 WCHAR SmmpScriptWorkDir[MAX_PATH] = { 0 };
+BOOL SmmpWorkDirIsLocal = TRUE;
+
+PSLIST SmmpUserTypeList = NULL, SmmpFnSignList = NULL;
+PSLIST SmmpTypeList = NULL;
+
+WORKDIR_STACK SmmpWorkDirStack;
 
 const char *FAIL_MESSAGES[] =
 {
@@ -193,6 +210,56 @@ const char *FAIL_MESSAGES[] =
 	///////////////
 	"filepath expected for @incl."
 };
+
+
+void SmmpInitWorkdirStack()
+{
+    memset(SmmpWorkDirStack.Stack, 0, sizeof(SmmpWorkDirStack.Stack));
+    SmmpWorkDirStack.spi = SMMP_WORKDIR_STACKSIZE;
+}
+
+void SmmpPushWorkdir()
+{
+    WORD spi = SmmpWorkDirStack.spi - 1;
+
+    //Ps. Dont be confused. WORD is an unsinged type and
+    //when it gets a less than zero value for exam (-1)
+    //It's sign bit will be overflowed, and its evaluated as WORD's max value
+    //That means the spi value will be greater than WORKDIR_STACKSIZE,
+    //And We will know that the stack is full
+    if (spi > SMMP_WORKDIR_STACKSIZE)
+        return;
+
+    
+
+    SmmpWorkDirStack.Stack[spi].isLocal = !HlpBeginsWithW(SmmpScriptWorkDir, L"http", FALSE, 4);
+    wcscpy(SmmpWorkDirStack.Stack[spi].workDir, SmmpScriptWorkDir);
+    SmmpWorkDirStack.spi--;
+}
+
+BOOL SmmpIsPreviousWorkdirLocal()
+{
+
+    if (SmmpWorkDirStack.spi == SMMP_WORKDIR_STACKSIZE)
+        return FALSE;
+
+    return SmmpWorkDirStack.Stack[SmmpWorkDirStack.spi + 1].isLocal;
+}
+
+BOOL SmmpPopWorkdir(BOOL *isLocal)
+{
+    WORD spi = SmmpWorkDirStack.spi;
+
+    if (spi == SMMP_WORKDIR_STACKSIZE)
+        return FALSE;
+
+    wcscpy(SmmpScriptWorkDir, SmmpWorkDirStack.Stack[spi].workDir);
+    *isLocal = SmmpWorkDirStack.Stack[spi].isLocal;
+    SmmpWorkDirIsLocal = *isLocal;
+    SmmpWorkDirStack.spi++;
+
+    return TRUE;
+}
 
 void SmmpRaiseParseError(LONG err)
 {
@@ -288,8 +355,15 @@ BOOL SmmCreateMapTypeInfo(const char *name, WORD size, BOOL isSigned, CONVERTER_
 
 #include <stdio.h>
 
-#define IMPLEMENT_CONVERTER(name, type,format) void Convert ## name  (char *buf, void *mem) { \
-												sprintf(buf,format,*((type *)mem)); \
+#define VALOFPTR(type, ptr) (*((type *)ptr))
+
+#define IMPLEMENT_CONVERTER(name, type,format) void Convert ## name  (char *buf, void *mem, bool isValue) { \
+                                                type tval; \
+                                                if (!isValue) \
+                                                    AbMemReadGuaranteed(VALOFPTR(duint,mem),&tval,sizeof(tval)); \
+                                                else \
+                                                    tval = VALOFPTR(type,mem); \
+												sprintf(buf,format,tval); \
 											} \
 
 
@@ -306,18 +380,35 @@ IMPLEMENT_CONVERTER(Long, LONG, "%ld")
 IMPLEMENT_CONVERTER(ULong, ULONG, "%lu")
 IMPLEMENT_CONVERTER(Long64, LONGLONG, "%lld")
 IMPLEMENT_CONVERTER(ULong64, ULONGLONG, "%llu")
-IMPLEMENT_CONVERTER(Pointer, LPVOID, "%p")
+IMPLEMENT_CONVERTER(Pointer, ARCHWIDE, "%p")
 
+#pragma warning(disable:4477)
 
-void ConvertString(char *buf, void *mem)
+#ifdef _WIN64
+IMPLEMENT_CONVERTER(ArchHex, ULONGLONG,"%016x")
+#else
+IMPLEMENT_CONVERTER(ArchHex, ULONG, "%08x")
+#endif
+
+void ConvertString(char *buf, void *mem, bool dummy)
 {
+#ifdef MAP_LOCAL
 	sprintf(buf, "\"%s\"", ((LPSTR)mem));
+#else
+	char lbuf[512];
+	
+	if (!DbgGetStringAt(VALOFPTR(duint,mem), lbuf))
+		return;
+
+	sprintf(buf, "\"%s\"", lbuf);
+#endif
 }
 
-void ConvertStringW(char *buf, void *mem)
+void ConvertStringW(char *buf, void *mem, bool dummy)
 {
+#ifdef MAP_LOCAL
 	ULONG slen;
-	wchar_t exBuf[0x1000];
+	wchar_t exBuf[512];
 
 	slen = wsprintf(exBuf, L"L\"%s\"", (LPWSTR)mem);
 
@@ -331,10 +422,15 @@ void ConvertStringW(char *buf, void *mem)
 		return;
 
 	WideCharToMultiByte(CP_ACP, WC_COMPOSITECHECK, exBuf, slen, buf, slen, NULL, NULL);
-}
+#else
+	char lbuf[512];
 
-PSLIST SmmpUserTypeList = NULL, SmmpFnSignList = NULL;
-PSLIST SmmpTypeList = NULL;
+	if (!DbgGetStringAt(VALOFPTR(duint,mem), lbuf))
+		return;
+
+	sprintf(buf, "%s", lbuf);
+#endif
+}
 
 BOOL SmmpGetTypeInfoByName(const char *name, PVOID *info, BOOL *isPrimitive)
 {
@@ -405,6 +501,8 @@ BOOL SmmpInitBasePrimitiveTypes()
 	success += (LONG)SmmCreateMapTypeInfo("wstring", SIZEOF_INT, FALSE, ConvertStringW, &index);
 
 	success += (LONG)SmmCreateMapTypeInfo("pointer", SIZEOF_INT, FALSE, ConvertPointer, &index);
+
+	success += (LONG)SmmCreateMapTypeInfo("archex", SIZEOF_POINTER, FALSE, ConvertArchHex, &index);
 
 
 	if (success != index)
@@ -732,6 +830,8 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 	fnSign = ALLOCOBJECT(FNSIGN);
 
 
+    DBGPRINT("parsing signature %s!%s", module, name);
+
 	do
 	{
 		if (!SmmpNextnode(&node))
@@ -794,6 +894,12 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 		argList[argCount].typeInfo.holder = argTypeInfo;
 		argList[argCount].isOutArg = argInOut == ARG_OUT;
 		argList[argCount].isPointer = isPtr;
+
+        DBGPRINT("name: %s", argName);
+        DBGPRINT("isStruct?: %d", !isPrimitive);
+        DBGPRINT("isOut?: %d", argInOut == ARG_OUT);
+        DBGPRINT("isPointer?: %d", isPtr);
+        DBGPRINT("\n");
 
 		if (argInOut == ARG_OUT && !fnSign->hasOutArg)
 			fnSign->hasOutArg = TRUE;
@@ -924,12 +1030,14 @@ void SmmpDumpType(PSTRUCTINFO type)
 	}
 }
 
-BOOL SmmpMapMemory(void *memory, ULONG size, PSTRUCTINFO typeInfo, SHORT depth);
+BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHORT depth);
 
-BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, char *buffer, BYTE *mem, SHORT lastDepth, OPTIONAL PTYPEINFOFIELD ptif)
+BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, PDMA dma, BYTE *mem, SHORT lastDepth, OPTIONAL PTYPEINFOFIELD ptif)
 {
 	PPRIMITIVETYPEINFO pmti;
 	BYTE *subMem;
+    char buffer[1024];
+    BOOL result = TRUE;
 
 	if (ptif != NULL && ptif->isPointer)
 	{
@@ -951,24 +1059,22 @@ BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, char *buffer, BYTE *mem, SH
 
 				AbMemReadGuaranteed((duint)mem, subMem, pmti->size);
 
-				pmti->method(buffer, subMem);
+				pmti->method(buffer, subMem,true);
 
 				AbMemoryFree(subMem);
 
-				return TRUE;
+                goto oneWayExit;
 			}
 			case sizeof(STRUCTINFO) :
 			{
 				DBGPRINT("Not implemeneted yet");
-				return FALSE;
-				break;
+                result = FALSE;
+                goto oneWayExit;
 			}
 			}
 		}
 
-		pmti->method(buffer, mem);
-
-		return TRUE;
+		pmti->method(buffer, mem,true);
 	}
 	else if (ptif != NULL && ptif->isArray)
 	{
@@ -980,62 +1086,85 @@ BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, char *buffer, BYTE *mem, SH
 		{
 			for (int i = 0;i < ptif->arrSize;i++)
 			{
-				pti->method(buffer, mem);
-				DBGPRINT("[%d] = %s ", i, buffer);
+				pti->method(buffer, mem,true);
+                DmaStringWriteA(dma, "[%d] = %s, ", buffer);
 				mem += ptif->arrSize;
 			}
+
+            memset(buffer, 0, sizeof(buffer));
+
+            goto oneWayExit;
 
 		}
 
 		if (pmti)
-			pmti->method(buffer, mem);
+			pmti->method(buffer, mem,true);
 	}
 	else
-		pti->method(buffer, mem);
+		pti->method(buffer, mem,true);
+
+oneWayExit:
+
+    if (result)
+    {
+        DmaStringWriteA(dma, buffer);
+    }
+
+	return result;
 }
 
-BOOL SmmpMapForUserType(PSTRUCTINFO sti, char *buffer, BYTE *mem, SHORT lastDepth)
+BOOL SmmpMapForUserType(PSTRUCTINFO sti, PDMA dma, BYTE *mem, SHORT lastDepth)
 {
-	return SmmpMapMemory(mem, sti->structSize, sti, lastDepth + 1);
+	return SmmpMapMemory(mem, dma, sti->structSize, sti, lastDepth + 1);
 }
 
-BOOL SmmpMapField(PTYPEINFOFIELD ptif, char *buffer, BYTE *mem,SHORT lastDepth)
+BOOL SmmpMapField(PTYPEINFOFIELD ptif, PDMA dma, BYTE *mem,SHORT lastDepth)
 {
 	PPRIMITIVETYPEINFO pmti = NULL;
 	BYTE *memArr = NULL;
 
 	if (ptif->isStruct)
-		return SmmpMapForUserType(ptif->type.structType, buffer, mem, lastDepth);
+		return SmmpMapForUserType(ptif->type.structType, dma, mem, lastDepth);
 
-	return SmmpMapForPrimitiveType(ptif->type.primitiveType, buffer, mem, lastDepth, ptif);
+	return SmmpMapForPrimitiveType(ptif->type.primitiveType, dma, mem, lastDepth, ptif);
 }
 
-#define PRINT_DEPTH_TABS(depth) for (int i=0;i<(depth);i++) HlpDebugPrint("\t")
+#define PRINT_DEPTH_TABS(buf,depth) for (int i=0;i<(depth);i++) strcat(buf,"\t")
 
-BOOL SmmpMapMemory(void *memory, ULONG size, PSTRUCTINFO typeInfo, SHORT depth)
+BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHORT depth)
 {
 	BYTE *mem;
 	PTYPEINFOFIELD ptif = NULL;
 	DWORD typeSize = 0;
 
-	char buffer[512];
+    char buf[512];
 
 	if (size < typeInfo->structSize)
 		return FALSE;
 
-	PRINT_DEPTH_TABS(depth);
 
-	DBGPRINT("%s = [\n", typeInfo->name);
+    for (int i=0;i<depth;i++)
+        DmaStringWriteA(dma, "\t");
 
+    DmaStringWriteA(dma, "%s = [\n", typeInfo->name);
+
+    
 	mem = (BYTE *)memory;
 
 	for (PSLISTNODE node = typeInfo->fields->head; node != NULL; node = node->next)
 	{
 		ptif = RECORD_OF(node, PTYPEINFOFIELD);
-		memset(buffer, 0, sizeof(buffer));
+		memset(buf, 0, sizeof(buf));
 
-		if (!SmmpMapField(ptif, buffer, mem,depth))
+        for (int i = 0;i < depth + 1;i++)
+            DmaStringWriteA(dma, "\t");
+
+        DmaStringWriteA(dma, "%s = ", ptif->fieldName);
+
+		if (!SmmpMapField(ptif, dma, mem,depth))
 			return FALSE;
+
+        DmaStringWriteA(dma, "\n");
 
 		typeSize = ptif->isStruct ? ptif->type.structType->structSize : ptif->type.primitiveType->size;
 
@@ -1046,14 +1175,13 @@ BOOL SmmpMapMemory(void *memory, ULONG size, PSTRUCTINFO typeInfo, SHORT depth)
 		else
 			mem += typeSize;
 
-		PRINT_DEPTH_TABS(depth + 1);
 
-		DBGPRINT("%s = %s\n", ptif->fieldName, buffer);
 	}
 
-	PRINT_DEPTH_TABS(depth);
+    for (int i = 0;i<depth;i++)
+        DmaStringWriteA(dma, "\t");
 
-	DBGPRINT("]\n");
+    DmaStringWriteA(dma, "]\n");
 
 	return TRUE;
 }
@@ -1080,9 +1208,11 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
 {
 	PARGINFO argInfo;
 	BOOL isPrimitive;
-	PGENERIC_DATATYPE_INFO gdti;
 	PDMA dmaContent;
-	char mapContentBuffer[0x1000];
+    BYTE *mem;
+    DWORD typeSize;
+
+	char *totalBuf;
 
 	if (!DmaCreateAdapter(sizeof(char), 0x1000, &dmaContent))
 		return FALSE;
@@ -1091,25 +1221,53 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
 	if (_stricmp(fnSign->module, afi->ownerModule->name) || _stricmp(fnSign->name, afi->name))
 		return FALSE;
 
+	DmaStringWriteA(dmaContent, "Map for %s:%s (\n", fnSign->module, fnSign->name);
+
 	for (int i = 0;i < fnSign->argCount;i++)
 	{
 		argInfo = &fnSign->args[i];
 
+        DmaStringWriteA(dmaContent, "\tArg: %s = ", argInfo->name);
+
 		if (!SmmpTypeIsPrimitive(argInfo->typeInfo.holder, &isPrimitive))
 			return FALSE;
 
+        if (argInfo->isPointer)
+        {
+            typeSize = isPrimitive ? argInfo->typeInfo.primitiveInfo->size : argInfo->typeInfo.structInfo->structSize;
+
+            mem = (BYTE *)AbMemoryAlloc(typeSize);
+
+            AbMemReadGuaranteed((duint)passedParams->paramList[i], mem, typeSize);
+        }
+        else
+            mem = (BYTE *)passedParams->paramList[i];
 		
 		if (isPrimitive)
-			SmmpMapForPrimitiveType((PPRIMITIVETYPEINFO)argInfo->typeInfo.holder, mapContentBuffer, (BYTE *)passedParams->paramList[i], 0, NULL);
+			SmmpMapForPrimitiveType((PPRIMITIVETYPEINFO)argInfo->typeInfo.holder, dmaContent, mem, 0, NULL);
 		else
 		{
 			//I need a special formatting for function map of the user types!!
-			SmmpMapForUserType((PSTRUCTINFO)argInfo->typeInfo.holder, mapContentBuffer, (BYTE *)passedParams->paramList[i], 0);
+			SmmpMapForUserType((PSTRUCTINFO)argInfo->typeInfo.holder, dmaContent, mem, 0);
 		}
 
-		DmaWrite(dmaContent, 0, strlen(mapContentBuffer), mapContentBuffer);
-
+		DmaStringWriteA(dmaContent, "\n");
 	}
+
+	DmaStringWriteA(dmaContent, ");\n\n");
+
+	if (!DmaPrepareForRead(dmaContent, (void **)&totalBuf))
+	{
+		DBGPRINT("Prepare for read failed");
+		DmaDestroyAdapter(dmaContent);
+		return FALSE;
+	}
+
+	_DBGPRINT(totalBuf);
+
+	DmaDestroyAdapter(dmaContent);
+
+	return TRUE;
 }
 
 BOOL SmmMapRemoteMemory(duint memory, ULONG size, const char *typeName)
@@ -1137,13 +1295,25 @@ BOOL SmmMapRemoteMemory(duint memory, ULONG size, const char *typeName)
 
 BOOL SmmMapMemory(void *memory, ULONG size, const char *typeName)
 {
+    PDMA dma;
+    BOOL result;
+
+    if (!DmaCreateAdapter(sizeof(char), 0x100, &dma))
+        return FALSE;
+
 	for (PSLISTNODE node = SmmpUserTypeList->head; node != NULL; node = node->next)
 	{
-		if (!strcmp(RECORD_OF(node, PSTRUCTINFO)->name, typeName))
-			return SmmpMapMemory(memory, size, RECORD_OF(node, PSTRUCTINFO),0);
+        if (!strcmp(RECORD_OF(node, PSTRUCTINFO)->name, typeName))
+        {
+            result = SmmpMapMemory(memory, dma, size, RECORD_OF(node, PSTRUCTINFO), 0);
+            break;
+        }
 	}
 
-	return FALSE;
+
+    DmaDestroyAdapter(dma);
+
+	return result;
 }
 
 BOOL SmmGetFunctionSignature(const char *module, const char *function, PFNSIGN *signInfo)
@@ -1168,9 +1338,90 @@ BOOL SmmGetFunctionSignature(const char *module, const char *function, PFNSIGN *
 	return FALSE;
 }
 
+BOOL SmmGetFunctionSignature2(ApiFunctionInfo *afi, PFNSIGN *signInfo)
+{
+    if (!afi)
+        return FALSE;
+
+    if (!signInfo)
+        return FALSE;
+
+    return SmmGetFunctionSignature(afi->ownerModule->name, afi->name, signInfo);
+}
+
+SHORT SmmGetArgumentCount(PFNSIGN signInfo)
+{
+    if (!signInfo)
+        return -1;
+
+    return signInfo->argCount;
+}
+
 BOOL SmmSigHasOutArgument(PFNSIGN signInfo)
 {
+    if (!signInfo)
+        return FALSE;
+
 	return signInfo->hasOutArg;
+}
+
+BOOL SmmpIsFullPathOrURL(LPCWSTR str, BOOL *isLocal)
+{
+    if (HlpBeginsWithW(str + 1, L":\\\\", TRUE, 3))
+    {
+        *isLocal = TRUE;
+        return TRUE;
+    }
+
+    if (HlpBeginsWithW(str, L"http", FALSE, 4))
+    {
+        *isLocal = FALSE;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+void SmmpBuildNewFileOrURL(LPWSTR buffer, ULONG bufSize, LPWSTR objectName)
+{
+    BOOL isLocal;
+    WCHAR sepFind, sepRepl;
+    LPWSTR ptr;
+
+    if (SmmpIsFullPathOrURL(objectName, &isLocal))
+    {
+        wcscpy(buffer, objectName);
+        return;
+    }
+
+
+    SmmpIsFullPathOrURL(SmmpScriptWorkDir, &isLocal);
+
+
+    if (!isLocal)
+    {
+        sepFind = '\\';
+        sepRepl = '/';
+    }
+    else
+    {
+        sepFind = '/';
+        sepRepl = '\\';
+    }
+
+    memset(buffer, 0, bufSize);
+
+    wsprintfW(buffer, L"%s%s", SmmpScriptWorkDir, objectName);
+
+    ptr = (LPWSTR)buffer;
+
+    while (*ptr)
+    {
+        if (*ptr == sepFind)
+            *ptr = sepRepl;
+        ptr++;
+    }
+
 }
 
 BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
@@ -1211,9 +1462,7 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
 			if (!inclFileW)
 				return FALSE;
 
-			memset(fullInclFileW, 0, sizeof(fullInclFileW));
-
-			wsprintfW(fullInclFileW, L"%s\\%s", SmmpScriptWorkDir, inclFileW);
+            SmmpBuildNewFileOrURL(fullInclFileW, sizeof(fullInclFileW), inclFileW);
 			
 			FREESTRING(inclFileW);
 
@@ -1269,31 +1518,57 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
 
 BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount)
 {
+    BOOL success = FALSE;
+
 	if (!typeCount)
 		return FALSE;
 
 	if (!SmmpFnSignList)
 	{
 		//TODO: cleanup on failure
-		if (!SmmpCreateSLIST(&SmmpFnSignList))
-			return FALSE;
+        if (!SmmpCreateSLIST(&SmmpFnSignList))
+            goto exit;
 
-		if (!SmmpCreateSLIST(&SmmpTypeList))
-			return FALSE;
+        if (!SmmpCreateSLIST(&SmmpTypeList))
+            goto exit;
 
-		if (!SmmpCreateSLIST(&SmmpUserTypeList))
-			return FALSE;
+        if (!SmmpCreateSLIST(&SmmpUserTypeList))
+            goto exit;
 
-		if (!SmmpInitBasePrimitiveTypes())
-			return FALSE;
+        if (!SmmpInitBasePrimitiveTypes())
+            goto exit;
+
+        SmmpInitWorkdirStack();
 
 		*typeCount = 0;
 	}
 
-	return SmmpParseType(typeDefString,typeCount);
+	success = SmmpParseType(typeDefString,typeCount);
+
+exit:
+
+    if (!success)
+        SmmReleaseResources();
+
+    return success;
 }
 
+BOOL SmmpParseFromInternet(LPCWSTR sourceUrl, WORD *typeCount)
+{
+    BYTE* content;
+    ULONG contentLen;
+    BOOL result;
 
+    if (!UtlInternetReadW(sourceUrl, &content, &contentLen))
+        return FALSE;
+
+    result = SmmParseType((LPCSTR)content, typeCount);
+
+    if (result)
+        AbMemoryFree(content);
+
+    return result;
+}
 
 BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount)
 {
@@ -1301,14 +1576,47 @@ BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount)
 	char *fileContent = NULL;
 	DWORD fsLo, fsHi, read;
 	BOOL result = FALSE;
+    WCHAR workDir[MAX_PATH];
+    BOOL isInetSource,workDirStacked=FALSE;
 
+    isInetSource = HlpBeginsWithW(fileName, L"http", FALSE, 4);
+
+    //Initial
 	if (!SmmpFnSignList)
 	{
 		//change prototype to const wstr
-		if (!HlpPathFromFilenameW((LPWSTR)fileName, SmmpScriptWorkDir, MAX_PATH))
+		if (!HlpPathFromFilenameW((LPWSTR)fileName, SmmpScriptWorkDir, MAX_PATH,isInetSource?L'/':L'\\'))
 			return FALSE;
+
+        SmmpWorkDirIsLocal = !isInetSource;
 	}
-	
+    else
+    {
+        HlpPathFromFilenameW((LPWSTR)fileName, workDir, MAX_PATH, isInetSource ? L'/' : L'\\');
+
+        if (_wcsicmp(workDir, SmmpScriptWorkDir))
+        {
+            SmmpPushWorkdir();
+            SmmpWorkDirIsLocal = !isInetSource;
+            wcscpy(SmmpScriptWorkDir, workDir);
+            workDirStacked = TRUE;
+        }
+
+    }
+
+    if (isInetSource)
+    {
+        result = SmmpParseFromInternet((LPCWSTR)fileName, typeCount);
+
+        if (workDirStacked)
+        {
+            SmmpPopWorkdir(&isInetSource);
+        }
+
+        return result;
+    }
+
+    
 	fileHandle = CreateFileW(fileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
 
 	if (fileHandle == INVALID_HANDLE_VALUE)
@@ -1342,6 +1650,11 @@ exit:
 
 	CloseHandle(fileHandle);
 
+    if (workDirStacked)
+    {
+        SmmpPopWorkdir(&isInetSource);
+    }
+
 	return result;
 }
 
@@ -1360,4 +1673,69 @@ BOOL SmmParseFromFileA(LPCSTR fileName, WORD *typeCount)
 	FREESTRING(fileNameW);
 
 	return result;
+}
+
+VOID SmmReleaseResources()
+{
+    PGENERIC_DATATYPE_INFO gdi;
+    PFNSIGN fnSign;
+
+    BOOL isPrimv = FALSE;
+
+    for (int i = 0;i < MAX_TYPE_IDENTS;i++)
+    {
+        if (TYPE_IDENTS[i].pti != NULL)
+        {
+            FREEOBJECT(TYPE_IDENTS[i].pti);
+            TYPE_IDENTS[i].pti = NULL;
+        }
+    }
+
+    if (SmmpUserTypeList != NULL)
+    {
+        SmmpDestroySList(SmmpUserTypeList);
+        SmmpUserTypeList = NULL;
+    }
+
+
+    if (SmmpTypeList != NULL)
+    {
+        for (PSLISTNODE node = SmmpTypeList->head; node != NULL; node = node->next)
+        {
+            gdi = RECORD_OF(node, PGENERIC_DATATYPE_INFO);
+           
+            SmmpTypeIsPrimitive(gdi, &isPrimv);
+
+            if (!isPrimv)
+            {
+                for (PSLISTNODE fieldNode = ((PSTRUCTINFO)gdi)->fields->head; 
+                    fieldNode != NULL; 
+                    fieldNode = fieldNode->next)
+                {
+                    FREEOBJECT(RECORD_OF(fieldNode, PTYPEINFOFIELD));
+                }
+            }
+
+            FREEOBJECT(gdi);
+
+        }
+
+        SmmpDestroySList(SmmpTypeList);
+        SmmpTypeList = NULL;
+    }
+
+
+    if (SmmpFnSignList != NULL)
+    {
+        for (PSLISTNODE node = SmmpFnSignList->head; node != NULL; node = node->next)
+        {
+            fnSign = RECORD_OF(node, PFNSIGN);
+            FREEOBJECT(fnSign->args);
+        }
+
+        SmmpDestroySList(SmmpFnSignList);
+        SmmpFnSignList = NULL;
+    }
+
+    SmmpInitWorkdirStack();
 }
