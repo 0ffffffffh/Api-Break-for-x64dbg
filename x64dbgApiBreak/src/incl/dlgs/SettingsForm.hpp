@@ -9,94 +9,94 @@
 class SettingsForm : public UiWrapper
 {
 private:
-	UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle,
+    UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle,
         *chkAutoload,*chkMapCallctx;
 
-	void FillGui()
-	{
-		Settings *settings = AbGetSettings();
+    void FillGui()
+    {
+        Settings *settings = AbGetSettings();
 
-		this->chkDetectDynLdr->SetState(settings->exposeDynamicApiLoads);
-		this->chkInclGetModHandle->SetState(settings->includeGetModuleHandle);
-		this->chkAutoload->SetState(settings->autoLoadData);
+        this->chkDetectDynLdr->SetState(settings->exposeDynamicApiLoads);
+        this->chkInclGetModHandle->SetState(settings->includeGetModuleHandle);
+        this->chkAutoload->SetState(settings->autoLoadData);
         this->chkMapCallctx->SetState(settings->mapCallContext);
-	}
+    }
 
-	void GetFromGUI()
-	{
-		Settings *setting = AbGetSettings();
-		setting->exposeDynamicApiLoads = this->chkDetectDynLdr->GetState();
-		setting->includeGetModuleHandle = this->chkInclGetModHandle->GetState();
-		setting->autoLoadData = this->chkAutoload->GetState();
+    void GetFromGUI()
+    {
+        Settings *setting = AbGetSettings();
+        setting->exposeDynamicApiLoads = this->chkDetectDynLdr->GetState();
+        setting->includeGetModuleHandle = this->chkInclGetModHandle->GetState();
+        setting->autoLoadData = this->chkAutoload->GetState();
         setting->mapCallContext = this->chkMapCallctx->GetState();
-	}
+    }
 
-	bool LoadSettings()
-	{
-		if (AbSettingsLoad())
-		{
-			FillGui();
-			return true;
-		}
+    bool LoadSettings()
+    {
+        if (AbSettingsLoad())
+        {
+            FillGui();
+            return true;
+        }
 
-		return false;
-	}
+        return false;
+    }
 
-	bool SaveSettings()
-	{
-		GetFromGUI();
+    bool SaveSettings()
+    {
+        GetFromGUI();
 
-		return AbSettingsSave();
-	}
+        return AbSettingsSave();
+    }
 
 public:
-	SettingsForm() : UiWrapper(IDD_SETTINGS, true)
-	{
-	}
+    SettingsForm() : UiWrapper(IDD_SETTINGS, true)
+    {
+    }
 
-	void OnCommand(WPARAM wp, LPARAM lp)
-	{
-		switch (LOWORD(wp))
-		{
-			case IDC_BTNSAVESETTINGS:
-				SaveSettings(); //fall trough
-			case IDC_BTNDISCARDSETTINGS:
-				Close();
-				break;
-			case IDC_CHKDETECTDYNLDR:
-			{
-				if (HIWORD(wp) == BN_CLICKED)
-				{
-					bool state = this->chkDetectDynLdr->GetState();
+    void OnCommand(WPARAM wp, LPARAM lp)
+    {
+        switch (LOWORD(wp))
+        {
+            case IDC_BTNSAVESETTINGS:
+                SaveSettings(); //fall trough
+            case IDC_BTNDISCARDSETTINGS:
+                Close();
+                break;
+            case IDC_CHKDETECTDYNLDR:
+            {
+                if (HIWORD(wp) == BN_CLICKED)
+                {
+                    bool state = this->chkDetectDynLdr->GetState();
 
-					this->chkInclGetModHandle->SetState(state);
-					this->chkInclGetModHandle->SetEnableState(state);
-					
-				}
-				break;
-			}
-		}
+                    this->chkInclGetModHandle->SetState(state);
+                    this->chkInclGetModHandle->SetEnableState(state);
+                    
+                }
+                break;
+            }
+        }
 
-		UiWrapper::OnCommand(wp, lp);
-	}
+        UiWrapper::OnCommand(wp, lp);
+    }
 
-	void OnInit()
-	{
-		SetWindowTitleA(AB_APPTITLE);
+    void OnInit()
+    {
+        SetWindowTitleA(AB_APPTITLE);
 
-		this->chkDetectDynLdr = GetControlById<UiCheckBox>(IDC_CHKDETECTDYNLDR);
-		this->chkInclGetModHandle = GetControlById<UiCheckBox>(IDC_CHKINSPGETMODULEHANDLE);
-		this->chkAutoload = GetControlById<UiCheckBox>(IDC_CHKAUTOLOAD);
+        this->chkDetectDynLdr = GetControlById<UiCheckBox>(IDC_CHKDETECTDYNLDR);
+        this->chkInclGetModHandle = GetControlById<UiCheckBox>(IDC_CHKINSPGETMODULEHANDLE);
+        this->chkAutoload = GetControlById<UiCheckBox>(IDC_CHKAUTOLOAD);
         this->chkMapCallctx = GetControlById<UiCheckBox>(IDC_CHKMAPCALLCTX);
 
-		LoadSettings();
+        LoadSettings();
 
-	}
+    }
 
-	bool ShowDialog()
-	{
-		return UiWrapper::ShowDialog(true);
-	}
+    bool ShowDialog()
+    {
+        return UiWrapper::ShowDialog(true);
+    }
 };
 
 #endif //__SETTINGSFORM_HPP_

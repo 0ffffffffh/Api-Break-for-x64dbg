@@ -46,15 +46,15 @@ typedef unsigned char uchar;
 #define AB_VERSION_BUILD 28
 
 #if _WIN64
-#define AB_PLATFORM		"x64"
+#define AB_PLATFORM     "x64"
 #else
-#define AB_PLATFORM		"x86"
+#define AB_PLATFORM     "x86"
 #endif
 
-#define AB_PHASE		"BETA"
+#define AB_PHASE        "BETA"
 
-#define AB_APPNAME		"Api Break (" AB_PHASE ")"
-#define AB_APPTITLE		AB_APPNAME " - " AB_PLATFORM
+#define AB_APPNAME      "Api Break (" AB_PHASE ")"
+#define AB_APPTITLE     AB_APPNAME " - " AB_PLATFORM
 
 
 

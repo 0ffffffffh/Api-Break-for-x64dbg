@@ -3,17 +3,17 @@
 
 void HlpDebugPrint(const char *format, ...)
 {
-	va_list vl;
-	char content[512] = { 0 };
+    va_list vl;
+    char content[512] = { 0 };
 
-	va_start(vl, format);
-	_vsnprintf(content, sizeof(content), format, vl);
-	va_end(vl);
+    va_start(vl, format);
+    _vsnprintf(content, sizeof(content), format, vl);
+    va_end(vl);
 
-	_plugin_logputs(content);
+    _plugin_logputs(content);
 
 #ifdef _DEBUG
-	OutputDebugStringA(content);
+    OutputDebugStringA(content);
 #endif
 
 }
@@ -21,102 +21,102 @@ void HlpDebugPrint(const char *format, ...)
 
 LPSTR HlpCloneStringA(LPCSTR str)
 {
-	LPSTR clone;
-	int len;
+    LPSTR clone;
+    int len;
 
-	if (!str)
-		return NULL;
+    if (!str)
+        return NULL;
 
-	len = (int)strlen(str);
+    len = (int)strlen(str);
 
-	clone = ALLOCSTRINGA(len);
+    clone = ALLOCSTRINGA(len);
 
-	if (!clone)
-		return NULL;
+    if (!clone)
+        return NULL;
 
-	memcpy(clone, str, len + 1);
+    memcpy(clone, str, len + 1);
 
-	return clone;
+    return clone;
 }
 
 LPWSTR HlpAnsiToWideString(LPCSTR str)
 {
-	ULONG slen;
-	LPWSTR wstr;
+    ULONG slen;
+    LPWSTR wstr;
 
-	if (!str)
-		return NULL;
+    if (!str)
+        return NULL;
 
-	slen = lstrlenA((LPCSTR)str);
+    slen = lstrlenA((LPCSTR)str);
 
-	wstr = (LPWSTR)ALLOCSTRINGW(slen);
+    wstr = (LPWSTR)ALLOCSTRINGW(slen);
 
-	if (!wstr)
-		return NULL;
+    if (!wstr)
+        return NULL;
 
-	if (MultiByteToWideChar(CP_ACP, MB_COMPOSITE, str, slen, wstr, slen) == slen)
-		return wstr;
+    if (MultiByteToWideChar(CP_ACP, MB_COMPOSITE, str, slen, wstr, slen) == slen)
+        return wstr;
 
-	FREESTRING(wstr);
-	return NULL;
+    FREESTRING(wstr);
+    return NULL;
 }
 
 LPSTR HlpWideToAnsiString(LPCWSTR str)
 {
-	ULONG slen;
-	LPSTR astr;
+    ULONG slen;
+    LPSTR astr;
 
-	if (!str)
-		return NULL;
+    if (!str)
+        return NULL;
 
-	slen = lstrlenW((LPCWSTR)str);
+    slen = lstrlenW((LPCWSTR)str);
 
-	astr = (LPSTR)ALLOCSTRINGA(slen);
+    astr = (LPSTR)ALLOCSTRINGA(slen);
 
-	if (!astr)
-		return NULL;
+    if (!astr)
+        return NULL;
 
-	if (WideCharToMultiByte(CP_ACP, WC_COMPOSITECHECK, str, slen, astr, slen, NULL, NULL) == slen)
-		return astr;
+    if (WideCharToMultiByte(CP_ACP, WC_COMPOSITECHECK, str, slen, astr, slen, NULL, NULL) == slen)
+        return astr;
 
-	FREESTRING(astr);
-	return NULL;
+    FREESTRING(astr);
+    return NULL;
 }
 
 bool  HlpTrimChar(LPSTR str, CHAR chr, int option)
 {
-	char *p;
-	int len;
-	bool hasEndChr = false;
+    char *p;
+    int len;
+    bool hasEndChr = false;
 
-	if (!str)
-		return false;
+    if (!str)
+        return false;
 
-	if (!option)
-		return false;
+    if (!option)
+        return false;
 
-	p = (char *)str;
-	len = (int)strlen(str);
+    p = (char *)str;
+    len = (int)strlen(str);
 
-	if (option & HLP_TRIM_RIGHT)
-		hasEndChr = *(p + (len - 1)) == chr;
+    if (option & HLP_TRIM_RIGHT)
+        hasEndChr = *(p + (len - 1)) == chr;
 
-	if (*p == chr && (option & HLP_TRIM_LEFT))
-	{
-		len -= hasEndChr ? 2 : 1;
+    if (*p == chr && (option & HLP_TRIM_LEFT))
+    {
+        len -= hasEndChr ? 2 : 1;
 
-		memmove(p, p + 1, len);
+        memmove(p, p + 1, len);
 
-		*(p + len) = 0;
-		return true;
-	}
-	else if (hasEndChr)
-	{
-		*(p + (len - 1)) = 0;
-		return true;
-	}
+        *(p + len) = 0;
+        return true;
+    }
+    else if (hasEndChr)
+    {
+        *(p + (len - 1)) = 0;
+        return true;
+    }
 
-	return false;
+    return false;
 }
 
 void HlppMemMoveSecure(BYTE *memSrc, BYTE *memDest, ULONG moveSize)
@@ -285,142 +285,142 @@ bool HlpEndsWithW(LPCWSTR look, LPCWSTR find, BOOL caseSens, LONG findLen)
 
 LONG HlpPrintFormatBufferExA(LPSTR *buffer, LPCSTR format, va_list vl)
 {
-	int reqLen = 0;
+    int reqLen = 0;
 
-	reqLen = _vsnprintf(NULL, NULL, format, vl);
+    reqLen = _vsnprintf(NULL, NULL, format, vl);
 
-	*buffer = ALLOCSTRINGA(reqLen);
+    *buffer = ALLOCSTRINGA(reqLen);
 
-	if (*buffer == NULL)
-		return false;
+    if (*buffer == NULL)
+        return false;
 
-	_vsnprintf(*buffer, reqLen + 1, format, vl);
+    _vsnprintf(*buffer, reqLen + 1, format, vl);
 
-	return reqLen;
+    return reqLen;
 }
 
 LONG HlpPrintFormatBufferA(LPSTR *buffer, LPCSTR format, ...)
 {
-	va_list vl;
-	int reqLen;
-	
-	va_start(vl, format);
-	
-	reqLen = HlpPrintFormatBufferExA(buffer, format, vl);
+    va_list vl;
+    int reqLen;
+    
+    va_start(vl, format);
+    
+    reqLen = HlpPrintFormatBufferExA(buffer, format, vl);
 
-	va_end(vl);
+    va_end(vl);
 
-	return reqLen;
+    return reqLen;
 }
 
 
 LONG HlpPrintFormatBufferExW(LPWSTR *buffer, LPCWSTR format, va_list vl)
 {
-	int reqLen = 0;
+    int reqLen = 0;
 
-	reqLen = _vsnwprintf(NULL, NULL, format, vl);
+    reqLen = _vsnwprintf(NULL, NULL, format, vl);
 
-	*buffer = ALLOCSTRINGW(reqLen);
+    *buffer = ALLOCSTRINGW(reqLen);
 
-	if (*buffer == NULL)
-		return false;
+    if (*buffer == NULL)
+        return false;
 
-	_vsnwprintf(*buffer, reqLen + 1, format, vl);
+    _vsnwprintf(*buffer, reqLen + 1, format, vl);
 
-	return reqLen;
+    return reqLen;
 }
 
 LONG HlpPrintFormatBufferW(LPWSTR *buffer, LPCWSTR format, ...)
 {
-	va_list vl;
-	int reqLen;
+    va_list vl;
+    int reqLen;
 
-	va_start(vl, format);
+    va_start(vl, format);
 
-	reqLen = HlpPrintFormatBufferExW(buffer, format, vl);
+    reqLen = HlpPrintFormatBufferExW(buffer, format, vl);
 
-	va_end(vl);
+    va_end(vl);
 
-	return reqLen;
+    return reqLen;
 }
 
 LONG HlpConcateStringFormatA(LPSTR buffer, LONG bufLen, LPCSTR format, ...)
 {
-	LONG currLen, remain,needLen;
-	va_list vl;
-	currLen = strlen(buffer);
+    LONG currLen, remain,needLen;
+    va_list vl;
+    currLen = strlen(buffer);
 
-	remain = (bufLen-1) - currLen;
+    remain = (bufLen-1) - currLen;
 
-	va_start(vl, format);
+    va_start(vl, format);
 
-	needLen = _vsnprintf(NULL, NULL, format, vl);
+    needLen = _vsnprintf(NULL, NULL, format, vl);
 
-	if (remain < needLen)
-		return 0;
+    if (remain < needLen)
+        return 0;
 
-	vsprintf(buffer + currLen, format, vl);
+    vsprintf(buffer + currLen, format, vl);
 
-	va_end(vl);
+    va_end(vl);
 
-	return needLen;
+    return needLen;
 }
 
 LONG HlpPathFromFilenameA(LPSTR fileName, LPSTR path, LONG pathBufSize, CHAR sep)
 {
-	char c;
-	LONG pathLen = 0,i=0;
-	LPSTR pathPtr = path;
+    char c;
+    LONG pathLen = 0,i=0;
+    LPSTR pathPtr = path;
 
     
-	while ((c = *(fileName + i)) != 0)
-	{
-		if (c == sep)
-			pathLen = i;
+    while ((c = *(fileName + i)) != 0)
+    {
+        if (c == sep)
+            pathLen = i;
 
-		i++;
+        i++;
 
-		if (i >= pathBufSize)
-			return 0;
+        if (i >= pathBufSize)
+            return 0;
 
-		*pathPtr++ = c;
-	}
+        *pathPtr++ = c;
+    }
 
-	if (pathLen == 0 && i > 0)
-		return i;
+    if (pathLen == 0 && i > 0)
+        return i;
 
-	pathLen++;
+    pathLen++;
 
-	path[pathLen] = 0;
+    path[pathLen] = 0;
 
-	return pathLen;
+    return pathLen;
 }
 
 LONG HlpPathFromFilenameW(LPWSTR fileName, LPWSTR path, LONG pathBufSize, WCHAR sep)
 {
-	wchar_t c;
-	LONG pathLen = 0, i = 0;
-	LPWSTR pathPtr = path;
+    wchar_t c;
+    LONG pathLen = 0, i = 0;
+    LPWSTR pathPtr = path;
 
-	while ((c = *(fileName + i)) != 0)
-	{
-		if (c == sep)
-			pathLen = i;
+    while ((c = *(fileName + i)) != 0)
+    {
+        if (c == sep)
+            pathLen = i;
 
-		i++;
+        i++;
 
-		if (i >= pathBufSize)
-			return 0;
+        if (i >= pathBufSize)
+            return 0;
 
-		*pathPtr++ = c;
-	}
+        *pathPtr++ = c;
+    }
 
-	if (pathLen == 0 && i > 0)
-		return i;
+    if (pathLen == 0 && i > 0)
+        return i;
 
-	pathLen++;
+    pathLen++;
 
-	path[pathLen] = 0;
+    path[pathLen] = 0;
 
-	return pathLen;
+    return pathLen;
 }

@@ -5,102 +5,102 @@
 
 BOOL UtlpExtractPassedParameters(PPASSED_PARAMETER_CONTEXT paramInfo)
 {
-	REGDUMP *regs;
-	duint *paramList;
-	duint csp, offset;
+    REGDUMP *regs;
+    duint *paramList;
+    duint csp, offset;
 
-	paramInfo->paramList = (duint *)AbMemoryAlloc(paramInfo->paramCount * sizeof(duint));
+    paramInfo->paramList = (duint *)AbMemoryAlloc(paramInfo->paramCount * sizeof(duint));
 
-	if (!paramInfo->paramList)
-		return FALSE;
+    if (!paramInfo->paramList)
+        return FALSE;
 
-	regs = &paramInfo->regCtx;
-	paramList = paramInfo->paramList;
-	
+    regs = &paramInfo->regCtx;
+    paramList = paramInfo->paramList;
+    
 #ifdef _WIN64
 
-	if (paramInfo->convention != Fastcall)
-	{
-		paramInfo->convention = Fastcall;
-		DBGPRINT("Calling convention revert to fastcall on Win64");
-	}
+    if (paramInfo->convention != Fastcall)
+    {
+        paramInfo->convention = Fastcall;
+        DBGPRINT("Calling convention revert to fastcall on Win64");
+    }
 
-	csp = regs->regcontext.csp;
+    csp = regs->regcontext.csp;
 
-	offset = 0x20;
+    offset = 0x20;
 
-	for (int i = 0;i < paramInfo->paramCount;i++)
-	{
-		switch (i)
-		{
-		case 0:
-			paramList[0] = regs->regcontext.ccx;
-			break;
-		case 1:
-			paramList[1] = regs->regcontext.cdx;
-			break;
-		case 2:
-			paramList[2] = regs->regcontext.r8;
-			break;
-		case 3:
-			paramList[3] = regs->regcontext.r9;
-			break;
-		}
+    for (int i = 0;i < paramInfo->paramCount;i++)
+    {
+        switch (i)
+        {
+        case 0:
+            paramList[0] = regs->regcontext.ccx;
+            break;
+        case 1:
+            paramList[1] = regs->regcontext.cdx;
+            break;
+        case 2:
+            paramList[2] = regs->regcontext.r8;
+            break;
+        case 3:
+            paramList[3] = regs->regcontext.r9;
+            break;
+        }
 
-		if (i > 3)
-		{
-			AbMemReadGuaranteed(csp + offset, &paramList[i], sizeof(duint));
-			offset += sizeof(duint);
-		}
-	}
+        if (i > 3)
+        {
+            AbMemReadGuaranteed(csp + offset, &paramList[i], sizeof(duint));
+            offset += sizeof(duint);
+        }
+    }
 
 #else
-	csp = regs->regcontext.csp;
-	offset = 0;
+    csp = regs->regcontext.csp;
+    offset = 0;
 
-	for (int i = 0;i < paramInfo->paramCount;i++)
-	{
-		AbMemReadGuaranteed(csp + offset, &paramList[i], sizeof(duint));
-		offset += sizeof(duint);
-	}
+    for (int i = 0;i < paramInfo->paramCount;i++)
+    {
+        AbMemReadGuaranteed(csp + offset, &paramList[i], sizeof(duint));
+        offset += sizeof(duint);
+    }
 
 #endif
 
-	return TRUE;
+    return TRUE;
 }
 
 
 
 BOOL DmaCreateAdapter(WORD sizeOfType, ULONG initialCount, PDMA *dma)
 {
-	PDMA pdma = NULL;
+    PDMA pdma = NULL;
 
-	pdma = ALLOCOBJECT(DMA);
+    pdma = ALLOCOBJECT(DMA);
 
-	if (!pdma)
-		return FALSE;
+    if (!pdma)
+        return FALSE;
 
-	pdma->sizeOfType = sizeOfType;
-	pdma->count = initialCount;
-	pdma->totalSize = sizeOfType * initialCount;
-	pdma->writeBoundary = 0;
-	pdma->memory = AbMemoryAlloc(pdma->totalSize);
+    pdma->sizeOfType = sizeOfType;
+    pdma->count = initialCount;
+    pdma->totalSize = sizeOfType * initialCount;
+    pdma->writeBoundary = 0;
+    pdma->memory = AbMemoryAlloc(pdma->totalSize);
 
 
-	if (!pdma->memory)
-	{
-		DBGPRINT("Dma memory alloc fail");
-		FREEOBJECT(pdma);
-		return FALSE;
-	}
+    if (!pdma->memory)
+    {
+        DBGPRINT("Dma memory alloc fail");
+        FREEOBJECT(pdma);
+        return FALSE;
+    }
 
-	InitializeCriticalSection(&pdma->areaGuard);
-	pdma->needsSynchronize = FALSE;
-	pdma->ownershipTaken = FALSE;
+    InitializeCriticalSection(&pdma->areaGuard);
+    pdma->needsSynchronize = FALSE;
+    pdma->ownershipTaken = FALSE;
 
-	*dma = pdma;
+    *dma = pdma;
 
-	return TRUE;
+    return TRUE;
 }
 
 BOOL DmaWriteNeedsExpand(PDMA dma, ARCHWIDE needByteSize, ULONG writeBeginOffset, BOOL autoIssue)
@@ -122,23 +122,23 @@ BOOL DmaWriteNeedsExpand(PDMA dma, ARCHWIDE needByteSize, ULONG writeBeginOffset
 
 BOOL DmaIssueExpansion(PDMA dma, LONG expansionDelta)
 {
-	BOOL isReducing = expansionDelta < 0;
+    BOOL isReducing = expansionDelta < 0;
 
-	if (isReducing && dma->totalSize + expansionDelta < dma->writeBoundary)
-		return FALSE;
+    if (isReducing && dma->totalSize + expansionDelta < dma->writeBoundary)
+        return FALSE;
 
-	EnterCriticalSection(&dma->areaGuard);
-	InterlockedCompareExchange((volatile LONG *)&dma->needsSynchronize, TRUE, FALSE);
+    EnterCriticalSection(&dma->areaGuard);
+    InterlockedCompareExchange((volatile LONG *)&dma->needsSynchronize, TRUE, FALSE);
 
-	dma->memory = AbMemoryRealloc(dma->memory, (dma->count + expansionDelta) * dma->sizeOfType);
-	dma->count += expansionDelta;
-	dma->totalSize = dma->count * dma->sizeOfType;
+    dma->memory = AbMemoryRealloc(dma->memory, (dma->count + expansionDelta) * dma->sizeOfType);
+    dma->count += expansionDelta;
+    dma->totalSize = dma->count * dma->sizeOfType;
 
-	InterlockedCompareExchange((volatile LONG *)&dma->needsSynchronize, FALSE, TRUE);
-	LeaveCriticalSection(&dma->areaGuard);
+    InterlockedCompareExchange((volatile LONG *)&dma->needsSynchronize, FALSE, TRUE);
+    LeaveCriticalSection(&dma->areaGuard);
 
 
-	return TRUE;
+    return TRUE;
 }
 
 #define DmapNeedsSynch(pdma) InterlockedCompareExchange((volatile LONG *)&pdma->needsSynchronize, FALSE, FALSE)
@@ -147,173 +147,173 @@ BOOL DmaIssueExpansion(PDMA dma, LONG expansionDelta)
 
 BOOL DmapMemIo(PDMA dma, ULONG offset, ARCHWIDE size, void *mem, BOOL write)
 {
-	ARCHWIDE realAddr;
-	ULONG requiredCount;
-	void *source, *dest;
+    ARCHWIDE realAddr;
+    ULONG requiredCount;
+    void *source, *dest;
 
-	if (offset == DMA_AUTO_OFFSET)
-		offset = dma->writeBoundary;
+    if (offset == DMA_AUTO_OFFSET)
+        offset = dma->writeBoundary;
 
-	requiredCount = (size / dma->sizeOfType) + 1;
+    requiredCount = (size / dma->sizeOfType) + 1;
 
-	if (write && dma->oldProtect != 0)
-	{
-		if (!VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, dma->oldProtect, &dma->oldProtect))
-			return FALSE;
+    if (write && dma->oldProtect != 0)
+    {
+        if (!VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, dma->oldProtect, &dma->oldProtect))
+            return FALSE;
 
-		dma->oldProtect = 0;
-	}
+        dma->oldProtect = 0;
+    }
 
-	if (write && offset + size > dma->totalSize)
-	{
-		if (!DmaIssueExpansion(dma, requiredCount + (dma->count / 3)))
-			return FALSE;
-	}
+    if (write && offset + size > dma->totalSize)
+    {
+        if (!DmaIssueExpansion(dma, requiredCount + (dma->count / 3)))
+            return FALSE;
+    }
 
-	realAddr = ((ARCHWIDE)dma->memory) + offset;
+    realAddr = ((ARCHWIDE)dma->memory) + offset;
 
-	if (write)
-	{
-		source = (void *)mem;
-		dest = (void *)realAddr;
-	}
-	else
-	{
-		source = (void *)realAddr;
-		dest = (void *)mem;
-	}
+    if (write)
+    {
+        source = (void *)mem;
+        dest = (void *)realAddr;
+    }
+    else
+    {
+        source = (void *)realAddr;
+        dest = (void *)mem;
+    }
 
-	
-	if (!DmapIsAccessValid(dma, offset, size))
-		return FALSE;
+    
+    if (!DmapIsAccessValid(dma, offset, size))
+        return FALSE;
 
-	memcpy(dest, source, size);
+    memcpy(dest, source, size);
 
-	if (write)
-	{
-		if (offset + size > dma->writeBoundary)
-			dma->writeBoundary = offset + size;
-	}
+    if (write)
+    {
+        if (offset + size > dma->writeBoundary)
+            dma->writeBoundary = offset + size;
+    }
 
-	return TRUE;
+    return TRUE;
 }
 
 BOOL DmaRead(PDMA dma, ULONG offset, ARCHWIDE size, void *destMemory)
 {
-	BOOL success;
-	BOOL owned = FALSE;
+    BOOL success;
+    BOOL owned = FALSE;
 
-	if (DmapNeedsSynch(dma))
-	{
-		EnterCriticalSection(&dma->areaGuard);
-		owned = TRUE;
-	}
+    if (DmapNeedsSynch(dma))
+    {
+        EnterCriticalSection(&dma->areaGuard);
+        owned = TRUE;
+    }
 
-	success = DmapMemIo(dma, offset, size, destMemory,FALSE);
+    success = DmapMemIo(dma, offset, size, destMemory,FALSE);
 
-	if (owned)
-		LeaveCriticalSection(&dma->areaGuard);
+    if (owned)
+        LeaveCriticalSection(&dma->areaGuard);
 
-	return success;
+    return success;
 
 }
 
 BOOL DmaWrite(PDMA dma, ULONG offset, ARCHWIDE size, void *srcMemory)
 {
-	BOOL success;
-	BOOL owned = FALSE;
+    BOOL success;
+    BOOL owned = FALSE;
 
-	if (DmapNeedsSynch(dma))
-	{
-		EnterCriticalSection(&dma->areaGuard);
-		owned = TRUE;
-	}
+    if (DmapNeedsSynch(dma))
+    {
+        EnterCriticalSection(&dma->areaGuard);
+        owned = TRUE;
+    }
 
-	success = DmapMemIo(dma, offset, size, srcMemory,TRUE);
+    success = DmapMemIo(dma, offset, size, srcMemory,TRUE);
 
-	if (owned)
-		LeaveCriticalSection(&dma->areaGuard);
+    if (owned)
+        LeaveCriticalSection(&dma->areaGuard);
 
-	return success;
+    return success;
 }
 
 BOOL DmaStringWriteA(PDMA dma, LPCSTR format, ...)
 {
-	BOOL success = FALSE;
-	LPSTR buffer = NULL;
-	LONG len = 0;
-	va_list va;
-	va_start(va, format);
+    BOOL success = FALSE;
+    LPSTR buffer = NULL;
+    LONG len = 0;
+    va_list va;
+    va_start(va, format);
 
-	len = HlpPrintFormatBufferExA(&buffer, format, va);
+    len = HlpPrintFormatBufferExA(&buffer, format, va);
 
-	if (len > 0)
-	{
-		success = DmaWrite(dma, DMA_AUTO_OFFSET, len * sizeof(char), buffer);
-		FREESTRING(buffer);
-	}
+    if (len > 0)
+    {
+        success = DmaWrite(dma, DMA_AUTO_OFFSET, len * sizeof(char), buffer);
+        FREESTRING(buffer);
+    }
 
-	va_end(va);
+    va_end(va);
 
-	return success;
+    return success;
 }
 
 BOOL DmaStringWriteW(PDMA dma, LPCWSTR format, ...)
 {
-	BOOL success = FALSE;
-	LPWSTR buffer = NULL;
-	LONG len = 0;
-	va_list va;
-	va_start(va, format);
+    BOOL success = FALSE;
+    LPWSTR buffer = NULL;
+    LONG len = 0;
+    va_list va;
+    va_start(va, format);
 
-	len = HlpPrintFormatBufferExW(&buffer, format, va);
+    len = HlpPrintFormatBufferExW(&buffer, format, va);
 
-	if (len > 0)
-	{
-		success = DmaWrite(dma, DMA_AUTO_OFFSET, len * sizeof(wchar_t), buffer);
-		FREESTRING(buffer);
-	}
+    if (len > 0)
+    {
+        success = DmaWrite(dma, DMA_AUTO_OFFSET, len * sizeof(wchar_t), buffer);
+        FREESTRING(buffer);
+    }
 
-	va_end(va);
+    va_end(va);
 
-	return success;
+    return success;
 }
 
 BOOL DmaReadTypeAlignedSequence(PDMA dma, ULONG index, ULONG count, void *destMemory)
 {
-	ARCHWIDE offset,size;
+    ARCHWIDE offset,size;
 
-	if (!dma)
-		return FALSE;
+    if (!dma)
+        return FALSE;
 
-	offset = index * dma->sizeOfType;
-	size = count * dma->sizeOfType;
+    offset = index * dma->sizeOfType;
+    size = count * dma->sizeOfType;
 
-	return DmaRead(dma, offset, size, destMemory);
+    return DmaRead(dma, offset, size, destMemory);
 }
 
 BOOL DmaCopyWrittenMemory(PDMA dma, void **destMemory, BOOL allocForDest)
 {
-	if (allocForDest)
-		*destMemory = AbMemoryAlloc(dma->writeBoundary);
+    if (allocForDest)
+        *destMemory = AbMemoryAlloc(dma->writeBoundary);
 
-	if (!*destMemory)
-		return FALSE;
+    if (!*destMemory)
+        return FALSE;
 
-	memcpy(*destMemory, dma->memory, dma->writeBoundary);
+    memcpy(*destMemory, dma->memory, dma->writeBoundary);
 
-	return TRUE;
+    return TRUE;
 }
 
 BOOL DmaTakeMemoryOwnership(PDMA dma, void **nativeMem)
 {
-	if (dma->ownershipTaken)
-		return FALSE;
+    if (dma->ownershipTaken)
+        return FALSE;
 
-	*nativeMem = dma->memory;
-	dma->ownershipTaken = TRUE;
+    *nativeMem = dma->memory;
+    dma->ownershipTaken = TRUE;
 
-	return TRUE;
+    return TRUE;
 }
 
 BOOL DmaPrepareForDirectWrite(PDMA dma, ULONG writeOffset, ARCHWIDE writeSize, void **nativeMem)
@@ -346,28 +346,28 @@ void DmaEndDirectWrite(PDMA dma)
 
 BOOL DmaPrepareForRead(PDMA dma, void **nativeMem)
 {
-	BOOL success = VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, PAGE_READONLY, &dma->oldProtect);
+    BOOL success = VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, PAGE_READONLY, &dma->oldProtect);
 
-	if (success)
-		*nativeMem = dma->memory;
+    if (success)
+        *nativeMem = dma->memory;
 
-	return success;
+    return success;
 }
 
 void DmaDestroyAdapter(PDMA dma)
 {
-	if (!dma)
-		return;
+    if (!dma)
+        return;
 
-	if (dma->oldProtect != 0)
-		VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, dma->oldProtect, &dma->oldProtect);
+    if (dma->oldProtect != 0)
+        VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, dma->oldProtect, &dma->oldProtect);
 
-	if (!dma->ownershipTaken)
-		AbMemoryFree(dma->memory);
+    if (!dma->ownershipTaken)
+        AbMemoryFree(dma->memory);
 
-	memset(dma, 0, sizeof(DMA));
+    memset(dma, 0, sizeof(DMA));
 
-	AbMemoryFree(dma);
+    AbMemoryFree(dma);
 
 }
 
@@ -375,27 +375,27 @@ void DmaDestroyAdapter(PDMA dma)
 
 BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, PPASSED_PARAMETER_CONTEXT *paramInfo)
 {
-	PPASSED_PARAMETER_CONTEXT ppi = NULL;
+    PPASSED_PARAMETER_CONTEXT ppi = NULL;
 
-	ppi = ALLOCOBJECT(PASSED_PARAMETER_CONTEXT);
+    ppi = ALLOCOBJECT(PASSED_PARAMETER_CONTEXT);
 
-	if (!ppi)
-		return FALSE;
+    if (!ppi)
+        return FALSE;
 
-	ppi->paramCount = paramCount;
-	ppi->convention = callConv;
+    ppi->paramCount = paramCount;
+    ppi->convention = callConv;
 
     memcpy(&ppi->regCtx, regdump, sizeof(REGDUMP));
 
-	if (!UtlpExtractPassedParameters(ppi))
-	{
-		FREEOBJECT(ppi);
-		return FALSE;
-	}
+    if (!UtlpExtractPassedParameters(ppi))
+    {
+        FREEOBJECT(ppi);
+        return FALSE;
+    }
 
-	*paramInfo = ppi;
+    *paramInfo = ppi;
 
-	return TRUE;
+    return TRUE;
 }
 
 duint UtlGetCallerAddress(REGDUMP *regdump)

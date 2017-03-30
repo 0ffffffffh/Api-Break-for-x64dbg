@@ -4,9 +4,9 @@
 #include <corelib.h>
 
 
-#define HLP_TRIM_LEFT		1
-#define HLP_TRIM_RIGHT		2
-#define HLP_TRIM_BOTH		(HLP_TRIM_LEFT | HLP_TRIM_RIGHT)
+#define HLP_TRIM_LEFT       1
+#define HLP_TRIM_RIGHT      2
+#define HLP_TRIM_BOTH       (HLP_TRIM_LEFT | HLP_TRIM_RIGHT)
 
 
 void HlpDebugPrint(const char *format, ...);

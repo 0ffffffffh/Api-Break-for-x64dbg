@@ -5,10 +5,10 @@
 
 typedef struct
 {
-	bool exposeDynamicApiLoads;
-	bool includeGetModuleHandle;
-	bool autoLoadData;
-	bool scanAggressive;
+    bool exposeDynamicApiLoads;
+    bool includeGetModuleHandle;
+    bool autoLoadData;
+    bool scanAggressive;
     bool mapCallContext;
 }Settings;
 

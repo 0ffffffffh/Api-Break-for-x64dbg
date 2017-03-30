@@ -13,375 +13,375 @@ class UiWrapper
 {
 private:
 
-	static UINT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, PVOID arg)
-	{
-		UiWrapper *_this = (UiWrapper *)arg;
+    static UINT_PTR CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, PVOID arg)
+    {
+        UiWrapper *_this = (UiWrapper *)arg;
 
-		switch (msg)
-		{
-		case WM_INITDIALOG:
-		{
-			_this->uiObject = (UIOBJECT *)lp;
-			_this->OnInitInternal();
-		}
-		break;
-		case WM_COMMAND:
-			_this->OnCommand(wp, lp);
-			break;
-		case WM_PAINT:
-			_this->OnPaint();
-			break;
-		case WM_TIMER:
-			_this->OnTimerTick((LONG)wp);
-			break;
-		case WM_CLOSE:
-			_this->OnClose();
-			break;
-		case WM_QUIT:
-			_this->OnDestroyed();
-			break;
-		}
+        switch (msg)
+        {
+        case WM_INITDIALOG:
+        {
+            _this->uiObject = (UIOBJECT *)lp;
+            _this->OnInitInternal();
+        }
+        break;
+        case WM_COMMAND:
+            _this->OnCommand(wp, lp);
+            break;
+        case WM_PAINT:
+            _this->OnPaint();
+            break;
+        case WM_TIMER:
+            _this->OnTimerTick((LONG)wp);
+            break;
+        case WM_CLOSE:
+            _this->OnClose();
+            break;
+        case WM_QUIT:
+            _this->OnDestroyed();
+            break;
+        }
 
 
-		return 0;
-	}
-
-private:
-	HANDLE initCompletedEvent;
-	UIOBJECT *uiObject;
-	WINDOWCREATIONINFO wci;
-	LONG dlgId;
-	bool killingSelf;
-
-	unordered_map<HWND, UiControlBase *> childControls;
-
-	UiControlBase *LookupControl(HWND hwnd)
-	{
-		unordered_map<HWND, UiControlBase *>::iterator it;
-
-		if (childControls.size() == 0)
-			return nullptr;
-
-		it = childControls.find(hwnd);
-
-		if (it == childControls.end())
-			return NULL;
-
-		return it->second;
-	}
-
-	void DestroyControlResources()
-	{
-		unordered_map<HWND, UiControlBase *>::iterator it;
-		UiControlBase *control = NULL;
-
-		if (childControls.size() == 0)
-			return;
-
-		while (childControls.size() > 0)
-		{
-			it = childControls.begin();
-			control = it->second;
-			childControls.erase(it);
-			delete control;
-		}
-	}
+        return 0;
+    }
 
 private:
+    HANDLE initCompletedEvent;
+    UIOBJECT *uiObject;
+    WINDOWCREATIONINFO wci;
+    LONG dlgId;
+    bool killingSelf;
 
-	bool SetControlEnableState(ULONG ctrlId, bool state)
-	{
-		HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
+    unordered_map<HWND, UiControlBase *> childControls;
 
-		if (!ctrlHwnd)
-			return false;
+    UiControlBase *LookupControl(HWND hwnd)
+    {
+        unordered_map<HWND, UiControlBase *>::iterator it;
 
-		return (bool)EnableWindow(ctrlHwnd, (BOOL)state);
-	}
+        if (childControls.size() == 0)
+            return nullptr;
 
-	void InitCommon(LONG dlgId, bool center)
-	{
-		this->killingSelf = false;
-		this->initCompletedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+        it = childControls.find(hwnd);
 
-		this->dlgId = dlgId;
+        if (it == childControls.end())
+            return NULL;
 
-		this->wci.pci = NULL;
+        return it->second;
+    }
 
-		if (center)
-		{
-			this->wci.pci = ALLOCOBJECT(PRECREATEWINDOWINFO);
-			this->wci.pci->wri.flag = WRIF_CENTER;
-		}
+    void DestroyControlResources()
+    {
+        unordered_map<HWND, UiControlBase *>::iterator it;
+        UiControlBase *control = NULL;
 
-	}
+        if (childControls.size() == 0)
+            return;
 
-	void OnInitInternal()
-	{
-		this->OnInit();
+        while (childControls.size() > 0)
+        {
+            it = childControls.begin();
+            control = it->second;
+            childControls.erase(it);
+            delete control;
+        }
+    }
 
-		SetEvent(this->initCompletedEvent);
-	}
+private:
+
+    bool SetControlEnableState(ULONG ctrlId, bool state)
+    {
+        HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
+
+        if (!ctrlHwnd)
+            return false;
+
+        return (bool)EnableWindow(ctrlHwnd, (BOOL)state);
+    }
+
+    void InitCommon(LONG dlgId, bool center)
+    {
+        this->killingSelf = false;
+        this->initCompletedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+        this->dlgId = dlgId;
+
+        this->wci.pci = NULL;
+
+        if (center)
+        {
+            this->wci.pci = ALLOCOBJECT(PRECREATEWINDOWINFO);
+            this->wci.pci->wri.flag = WRIF_CENTER;
+        }
+
+    }
+
+    void OnInitInternal()
+    {
+        this->OnInit();
+
+        SetEvent(this->initCompletedEvent);
+    }
 
 public:
 
-	UiWrapper(LONG dlgId, bool center)
-	{
-		InitCommon(dlgId, center);
-	}
+    UiWrapper(LONG dlgId, bool center)
+    {
+        InitCommon(dlgId, center);
+    }
 
-	UiWrapper(LONG dlgId)
-	{
-		InitCommon(dlgId, false);
-	}
+    UiWrapper(LONG dlgId)
+    {
+        InitCommon(dlgId, false);
+    }
 
-	~UiWrapper(void)
-	{
-		DestroyControlResources();
-		CloseHandle(this->initCompletedEvent);
+    ~UiWrapper(void)
+    {
+        DestroyControlResources();
+        CloseHandle(this->initCompletedEvent);
 
-		if (!this->killingSelf)
-		{
-			if (UiIsRunning(this->uiObject))
-				Close();
-		}
-	}
+        if (!this->killingSelf)
+        {
+            if (UiIsRunning(this->uiObject))
+                Close();
+        }
+    }
 
-	static void DestroyAllActiveWindows()
-	{
-		UiForceCloseAllActiveWindows();
-	}
+    static void DestroyAllActiveWindows()
+    {
+        UiForceCloseAllActiveWindows();
+    }
 
-	virtual bool ShowDialog()
-	{
-		return ShowDialog(true);
-	}
+    virtual bool ShowDialog()
+    {
+        return ShowDialog(true);
+    }
 
-	virtual bool ShowDialog(bool seperateUiThread)
-	{
-		BOOL succeeded;
+    virtual bool ShowDialog(bool seperateUiThread)
+    {
+        BOOL succeeded;
 
-		this->uiObject = UiCreateDialog(
-			(UIDLGPROC)this->DialogProc,
-			NULL,
-			this->dlgId,
-			(BOOL)seperateUiThread,
-			this,
-			&this->wci,
-			&succeeded);
+        this->uiObject = UiCreateDialog(
+            (UIDLGPROC)this->DialogProc,
+            NULL,
+            this->dlgId,
+            (BOOL)seperateUiThread,
+            this,
+            &this->wci,
+            &succeeded);
 
-		if (!seperateUiThread)
-			return (bool)succeeded;
+        if (!seperateUiThread)
+            return (bool)succeeded;
 
-		return this->uiObject != NULL;
-	}
+        return this->uiObject != NULL;
+    }
 
-	HWND GetHWND() const
-	{
-		return this->uiObject->hwnd;
-	}
+    HWND GetHWND() const
+    {
+        return this->uiObject->hwnd;
+    }
 
-	bool SetTimer(LONG timerId, ULONG period)
-	{
-		return ::SetTimer(GetHWND(), (UINT_PTR)timerId, (UINT)period, NULL)
-			== timerId;
-	}
+    bool SetTimer(LONG timerId, ULONG period)
+    {
+        return ::SetTimer(GetHWND(), (UINT_PTR)timerId, (UINT)period, NULL)
+            == timerId;
+    }
 
-	void KillTimer(LONG timerId)
-	{
-		::KillTimer(GetHWND(), (UINT_PTR)timerId);
-	}
+    void KillTimer(LONG timerId)
+    {
+        ::KillTimer(GetHWND(), (UINT_PTR)timerId);
+    }
 
-	LONG MessageBox(LPWSTR msg, LPWSTR title, ULONG flags)
-	{
-		return ::MessageBoxW(GetHWND(), (LPCWSTR)msg, (LPCWSTR)title, flags);
-	}
+    LONG MessageBox(LPWSTR msg, LPWSTR title, ULONG flags)
+    {
+        return ::MessageBoxW(GetHWND(), (LPCWSTR)msg, (LPCWSTR)title, flags);
+    }
 
-	LONG MsgBoxInfo(LPCSTR msg, LPCSTR title)
-	{
-		return ::MessageBoxA(GetHWND(), msg, title, MB_ICONINFORMATION);
-	}
+    LONG MsgBoxInfo(LPCSTR msg, LPCSTR title)
+    {
+        return ::MessageBoxA(GetHWND(), msg, title, MB_ICONINFORMATION);
+    }
 
-	LONG MsgBoxError(LPCSTR msg, LPCSTR title)
-	{
-		return ::MessageBoxA(GetHWND(), msg, title, MB_ICONERROR);
-	}
+    LONG MsgBoxError(LPCSTR msg, LPCSTR title)
+    {
+        return ::MessageBoxA(GetHWND(), msg, title, MB_ICONERROR);
+    }
 
-	LONG MsgBoxQuestion(LPCSTR msg, LPCSTR title)
-	{
-		return ::MessageBoxA(GetHWND(), msg, title, MB_YESNO | MB_ICONQUESTION);
-	}
+    LONG MsgBoxQuestion(LPCSTR msg, LPCSTR title)
+    {
+        return ::MessageBoxA(GetHWND(), msg, title, MB_YESNO | MB_ICONQUESTION);
+    }
 
-	void WaitForInitCompletion()
-	{
-		WaitForSingleObject(this->initCompletedEvent, INFINITE);
-	}
+    void WaitForInitCompletion()
+    {
+        WaitForSingleObject(this->initCompletedEvent, INFINITE);
+    }
 
-	void Close()
-	{
-		if (UiDestroyDialog(this->uiObject))
-		{
-			this->uiObject = NULL;
-		}
-	}
+    void Close()
+    {
+        if (UiDestroyDialog(this->uiObject))
+        {
+            this->uiObject = NULL;
+        }
+    }
 
-	ULONG GetControlTextA(ULONG ctrlId, LPSTR strBuf, ULONG bufSize)
-	{
-		LPWSTR wbuf = ALLOCSTRINGW(bufSize);
-		LPSTR as;
-		ULONG textLen;
+    ULONG GetControlTextA(ULONG ctrlId, LPSTR strBuf, ULONG bufSize)
+    {
+        LPWSTR wbuf = ALLOCSTRINGW(bufSize);
+        LPSTR as;
+        ULONG textLen;
 
-		if (!wbuf)
-			return 0;
+        if (!wbuf)
+            return 0;
 
-		textLen = GetControlText(ctrlId, wbuf, bufSize);
+        textLen = GetControlText(ctrlId, wbuf, bufSize);
 
-		if (textLen > 0)
-		{
-			as = HlpWideToAnsiString(wbuf);
+        if (textLen > 0)
+        {
+            as = HlpWideToAnsiString(wbuf);
 
-			if (as != NULL)
-			{
-				strncpy(strBuf, as, textLen);
-				FREESTRING(as);
-			}
-		}
+            if (as != NULL)
+            {
+                strncpy(strBuf, as, textLen);
+                FREESTRING(as);
+            }
+        }
 
-		FREESTRING(wbuf);
+        FREESTRING(wbuf);
 
-		return textLen;
-	}
+        return textLen;
+    }
 
-	ULONG GetControlText(ULONG ctrlId, LPWSTR strBuf, ULONG bufSize)
-	{
-		HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
+    ULONG GetControlText(ULONG ctrlId, LPWSTR strBuf, ULONG bufSize)
+    {
+        HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
 
-		if (!ctrlHwnd)
-			return 0;
+        if (!ctrlHwnd)
+            return 0;
 
-		return GetWindowTextW(ctrlHwnd, (LPWSTR)strBuf, bufSize);
-	}
+        return GetWindowTextW(ctrlHwnd, (LPWSTR)strBuf, bufSize);
+    }
 
-	void SetWindowTitleW(LPWSTR title)
-	{
-		SetWindowTextW(GetHWND(), title);
-	}
+    void SetWindowTitleW(LPWSTR title)
+    {
+        SetWindowTextW(GetHWND(), title);
+    }
 
-	void SetWindowTitleA(LPSTR title)
-	{
-		SetWindowTextA(GetHWND(),title);
-	}
+    void SetWindowTitleA(LPSTR title)
+    {
+        SetWindowTextA(GetHWND(),title);
+    }
 
-	bool SetControlTextA(ULONG ctrlId, LPSTR str)
-	{
-		bool ret;
-		LPWSTR wstr;
+    bool SetControlTextA(ULONG ctrlId, LPSTR str)
+    {
+        bool ret;
+        LPWSTR wstr;
 
-		wstr = HlpAnsiToWideString(str);
+        wstr = HlpAnsiToWideString(str);
 
-		ret = SetControlText(ctrlId, wstr);
+        ret = SetControlText(ctrlId, wstr);
 
-		FREESTRING(wstr);
+        FREESTRING(wstr);
 
-		return ret;
-	}
+        return ret;
+    }
 
-	bool SetControlText(ULONG ctrlId, LPWSTR str)
-	{
-		HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
+    bool SetControlText(ULONG ctrlId, LPWSTR str)
+    {
+        HWND ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
 
-		if (!ctrlHwnd)
-			return false;
+        if (!ctrlHwnd)
+            return false;
 
-		return (bool)SetWindowTextW(ctrlHwnd, (LPCWSTR)str);
-	}
+        return (bool)SetWindowTextW(ctrlHwnd, (LPCWSTR)str);
+    }
 
-	bool SetControlTextFormatA(ULONG ctrlId, const char *format, ...)
-	{
-		char *buffer;
-		bool success = false;
+    bool SetControlTextFormatA(ULONG ctrlId, const char *format, ...)
+    {
+        char *buffer;
+        bool success = false;
 
-		va_list vl;
+        va_list vl;
 
-		va_start(vl, format);
+        va_start(vl, format);
 
-		if (HlpPrintFormatBufferExA(&buffer, format, vl) > 0)
-		{
-			SetControlTextA(ctrlId, buffer);
-			FREESTRING(buffer);
-			success = true;
-		}
+        if (HlpPrintFormatBufferExA(&buffer, format, vl) > 0)
+        {
+            SetControlTextA(ctrlId, buffer);
+            FREESTRING(buffer);
+            success = true;
+        }
 
-		va_end(vl);
+        va_end(vl);
 
-		return success;
-	}
+        return success;
+    }
 
-	bool EnableControl(ULONG ctrlId)
-	{
-		return SetControlEnableState(ctrlId, true);
-	}
+    bool EnableControl(ULONG ctrlId)
+    {
+        return SetControlEnableState(ctrlId, true);
+    }
 
-	bool DisableControl(ULONG ctrlId)
-	{
-		return SetControlEnableState(ctrlId, false);
-	}
+    bool DisableControl(ULONG ctrlId)
+    {
+        return SetControlEnableState(ctrlId, false);
+    }
 
-	template <class T> T *GetControlById(ULONG ctrlId)
-	{
-		HWND ctrlHwnd;
-		T *ctrl = NULL;
-		
-		ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
+    template <class T> T *GetControlById(ULONG ctrlId)
+    {
+        HWND ctrlHwnd;
+        T *ctrl = NULL;
+        
+        ctrlHwnd = GetDlgItem(GetHWND(), ctrlId);
 
-		
-		if ((ctrl = (T *)LookupControl(ctrlHwnd)) != NULL)
-			return ctrl;
-		
-		ctrl = new T(this->uiObject, ctrlId, this);
+        
+        if ((ctrl = (T *)LookupControl(ctrlHwnd)) != NULL)
+            return ctrl;
+        
+        ctrl = new T(this->uiObject, ctrlId, this);
 
 
-		childControls.insert(std::pair<HWND, UiControlBase *>(ctrlHwnd, ctrl));
+        childControls.insert(std::pair<HWND, UiControlBase *>(ctrlHwnd, ctrl));
 
-		ctrl->OnInitControl();
+        ctrl->OnInitControl();
 
-		return ctrl;
-	}
+        return ctrl;
+    }
 
-	virtual void OnTimerTick(LONG timerId)
-	{
+    virtual void OnTimerTick(LONG timerId)
+    {
 
-	}
+    }
 
-	virtual void OnDestroyed()
-	{
-		delete this;
-	}
+    virtual void OnDestroyed()
+    {
+        delete this;
+    }
 
-	virtual void OnClose()
-	{
-		this->killingSelf = true;
-	}
+    virtual void OnClose()
+    {
+        this->killingSelf = true;
+    }
 
-	virtual void OnPaint()
-	{
-	}
+    virtual void OnPaint()
+    {
+    }
 
-	virtual void OnCommand(WPARAM wp, LPARAM lp)
-	{
-		UiControlBase *ctrl = NULL;
+    virtual void OnCommand(WPARAM wp, LPARAM lp)
+    {
+        UiControlBase *ctrl = NULL;
 
-		if (lp != NULL)
-		{
-			ctrl = LookupControl((HWND)lp);
+        if (lp != NULL)
+        {
+            ctrl = LookupControl((HWND)lp);
 
-			if (ctrl != nullptr)
-				ctrl->OnCommand(wp);
-		}
-	}
+            if (ctrl != nullptr)
+                ctrl->OnCommand(wp);
+        }
+    }
 
-	virtual void OnInit()
-	{
-	}
+    virtual void OnInit()
+    {
+    }
 };
 

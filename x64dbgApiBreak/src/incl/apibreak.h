@@ -9,9 +9,9 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 
-#define CSR_FAILED					0
-#define CSR_COMPLETELY_SUCCESS		1
-#define CSR_PARTIAL_SUCCESS			2
+#define CSR_FAILED                  0
+#define CSR_COMPLETELY_SUCCESS      1
+#define CSR_PARTIAL_SUCCESS         2
 
 
 
@@ -36,31 +36,31 @@ struct __BpCallbackContext;
 
 typedef struct
 {
-	_T(ModuleApiInfo *)			ownerModule;
-	struct
-	{
-		duint *					calls;
-		int						callCount;
-		int						callListSize;
-	}callInfo;
-	duint						rva;
-	char						name[MAX_LABEL_SIZE];
+    _T(ModuleApiInfo *)         ownerModule;
+    struct
+    {
+        duint *                 calls;
+        int                     callCount;
+        int                     callListSize;
+    }callInfo;
+    duint                       rva;
+    char                        name[MAX_LABEL_SIZE];
 }ApiFunctionInfo;
 
 typedef unordered_map<
-	std::string,
-	ApiFunctionInfo *,
-	std::tr1::hash<std::string>>	apilist;
+    std::string,
+    ApiFunctionInfo *,
+    std::tr1::hash<std::string>>    apilist;
 
 typedef struct __ModuleApiInfo
 {
-	duint				baseAddr;
-	duint				listCount;
-	apilist*			apiList;
-	char				name[MAX_MODULE_SIZE];
+    duint               baseAddr;
+    duint               listCount;
+    apilist*            apiList;
+    char                name[MAX_MODULE_SIZE];
 }ModuleApiInfo;
 
-typedef vector<ModuleApiInfo *>		modlist;
+typedef vector<ModuleApiInfo *>     modlist;
 
 
 typedef void(*APIMODULE_ENUM_PROC)(LPCSTR,void *);
@@ -69,13 +69,13 @@ typedef void(*AB_BREAKPOINT_CALLBACK)(struct __BpCallbackContext *);
 
 typedef struct __BpCallbackContext
 {
-	duint						bpAddr;
-	BRIDGEBP *					bp;
+    duint                       bpAddr;
+    BRIDGEBP *                  bp;
     REGDUMP                     regContext;
-	AB_BREAKPOINT_CALLBACK		callback;
-	ApiFunctionInfo				*afi;
+    AB_BREAKPOINT_CALLBACK      callback;
+    ApiFunctionInfo             *afi;
     BOOL                        backTrack;
-	void *						user;
+    void *                      user;
 }BpCallbackContext;
 
 #define BPO_NONE                0

@@ -7,66 +7,66 @@
 class UiControlBase
 {
 protected:
-	UIOBJECT *ui;
-	DWORD ctrlId;
-	HWND ctrlHwnd;
-	UiWrapper *parent;
+    UIOBJECT *ui;
+    DWORD ctrlId;
+    HWND ctrlHwnd;
+    UiWrapper *parent;
 
-	DWORD MyId() const
-	{
-		return this->ctrlId;
-	}
+    DWORD MyId() const
+    {
+        return this->ctrlId;
+    }
 
-	HWND MyHandle() const
-	{
-		return this->ctrlHwnd;
-	}
+    HWND MyHandle() const
+    {
+        return this->ctrlHwnd;
+    }
 
 public:
-	UiControlBase()
-	{
-		this->ui = NULL;
-		this->ctrlId = 0;
-	}
+    UiControlBase()
+    {
+        this->ui = NULL;
+        this->ctrlId = 0;
+    }
 
-	UiControlBase(UIOBJECT *ui, DWORD ctrlId, UiWrapper *parent)
-	{
-		this->ui = ui;
-		this->ctrlId = ctrlId;
-		this->parent = parent;
+    UiControlBase(UIOBJECT *ui, DWORD ctrlId, UiWrapper *parent)
+    {
+        this->ui = ui;
+        this->ctrlId = ctrlId;
+        this->parent = parent;
 
-		this->ctrlHwnd = GetDlgItem(this->ui->hwnd, this->ctrlId);
-	}
+        this->ctrlHwnd = GetDlgItem(this->ui->hwnd, this->ctrlId);
+    }
 
-	LONG SendControlMsg(UINT msg, WPARAM wp, LPARAM lp)
-	{
-		return (LONG)::SendMessage(this->ctrlHwnd, msg, wp, lp);
-	}
+    LONG SendControlMsg(UINT msg, WPARAM wp, LPARAM lp)
+    {
+        return (LONG)::SendMessage(this->ctrlHwnd, msg, wp, lp);
+    }
 
-	void Disable()
-	{
-		::EnableWindow(MyHandle(), FALSE);
-	}
+    void Disable()
+    {
+        ::EnableWindow(MyHandle(), FALSE);
+    }
 
-	void Enable()
-	{
-		::EnableWindow(MyHandle(), TRUE);
-	}
+    void Enable()
+    {
+        ::EnableWindow(MyHandle(), TRUE);
+    }
 
-	void SetEnableState(bool enable)
-	{
-		::EnableWindow(MyHandle(), enable);
-	}
+    void SetEnableState(bool enable)
+    {
+        ::EnableWindow(MyHandle(), enable);
+    }
 
-	virtual void OnInitControl()
-	{
+    virtual void OnInitControl()
+    {
 
-	}
+    }
 
-	virtual void OnCommand(WPARAM wp)
-	{
+    virtual void OnCommand(WPARAM wp)
+    {
 
-	}
+    }
 
 
 };

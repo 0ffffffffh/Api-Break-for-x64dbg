@@ -5,37 +5,37 @@
 
 typedef enum
 {
-	Cdecl,
-	Stdcall,
-	Fastcall,
-	Thiscall
+    Cdecl,
+    Stdcall,
+    Fastcall,
+    Thiscall
 }CALLCONVENTION;
 
 typedef struct
 {
-	REGDUMP				regCtx;
-	CALLCONVENTION		convention;
-	USHORT				paramCount;
-	duint *				paramList;
+    REGDUMP             regCtx;
+    CALLCONVENTION      convention;
+    USHORT              paramCount;
+    duint *             paramList;
 }*PPASSED_PARAMETER_CONTEXT,PASSED_PARAMETER_CONTEXT;
 
 #ifdef _WIN64
-typedef ULONGLONG	ARCHWIDE;
+typedef ULONGLONG   ARCHWIDE;
 #else
-typedef ULONG		ARCHWIDE;
+typedef ULONG       ARCHWIDE;
 #endif
 
 
 typedef struct __DMA
 {
-	WORD				sizeOfType;
-	ULONG				count;
-	ARCHWIDE			writeBoundary;
-	ARCHWIDE			totalSize;
-	LONG				needsSynchronize;
-	BOOL				ownershipTaken;
-	CRITICAL_SECTION	areaGuard;
-	DWORD				oldProtect;
+    WORD                sizeOfType;
+    ULONG               count;
+    ARCHWIDE            writeBoundary;
+    ARCHWIDE            totalSize;
+    LONG                needsSynchronize;
+    BOOL                ownershipTaken;
+    CRITICAL_SECTION    areaGuard;
+    DWORD               oldProtect;
     struct
     {
         ULONG           offset;
@@ -43,7 +43,7 @@ typedef struct __DMA
         ULONG           beginCookie;
         ULONG           endCookie;
     }UnsafeWriteCheckInfo;
-	void *				memory;
+    void *              memory;
 }*PDMA,DMA; //DYNAMIC MEMORY ADAPTER
 
 #define DMA_AUTO_OFFSET ULONG_MAX
