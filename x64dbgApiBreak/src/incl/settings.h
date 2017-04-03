@@ -10,6 +10,7 @@ typedef struct
     bool autoLoadData;
     bool scanAggressive;
     bool mapCallContext;
+    char *mainScripts;
 }Settings;
 
 bool AbSettingsLoad();

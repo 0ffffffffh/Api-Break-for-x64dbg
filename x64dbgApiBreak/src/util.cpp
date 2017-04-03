@@ -3,7 +3,7 @@
 
 #pragma comment(lib,"Winhttp.lib")
 
-BOOL UtlpExtractPassedParameters(PPASSED_PARAMETER_CONTEXT paramInfo)
+BOOL UtlpExtractPassedParameters(PPASSED_PARAMETER_CONTEXT paramInfo, BOOL ipOnStack)
 {
     REGDUMP *regs;
     duint *paramList;
@@ -28,6 +28,9 @@ BOOL UtlpExtractPassedParameters(PPASSED_PARAMETER_CONTEXT paramInfo)
     csp = regs->regcontext.csp;
 
     offset = 0x20;
+
+    if (ipOnStack)
+        offset += sizeof(duint);
 
     for (int i = 0;i < paramInfo->paramCount;i++)
     {
@@ -57,6 +60,9 @@ BOOL UtlpExtractPassedParameters(PPASSED_PARAMETER_CONTEXT paramInfo)
 #else
     csp = regs->regcontext.csp;
     offset = 0;
+
+    if (ipOnStack)
+        offset = sizeof(duint);
 
     for (int i = 0;i < paramInfo->paramCount;i++)
     {
@@ -373,7 +379,7 @@ void DmaDestroyAdapter(PDMA dma)
 
 //UTILITY FUNCS
 
-BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, PPASSED_PARAMETER_CONTEXT *paramInfo)
+BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, BOOL ipOnStack, PPASSED_PARAMETER_CONTEXT *paramInfo)
 {
     PPASSED_PARAMETER_CONTEXT ppi = NULL;
 
@@ -387,7 +393,7 @@ BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGD
 
     memcpy(&ppi->regCtx, regdump, sizeof(REGDUMP));
 
-    if (!UtlpExtractPassedParameters(ppi))
+    if (!UtlpExtractPassedParameters(ppi,ipOnStack))
     {
         FREEOBJECT(ppi);
         return FALSE;

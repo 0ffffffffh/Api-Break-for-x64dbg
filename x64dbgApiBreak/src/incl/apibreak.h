@@ -6,6 +6,7 @@
 #pragma warning(disable:4091)
 #pragma warning(disable:4800)
 #pragma warning(disable:4244)
+#pragma warning(disable:4267)
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -78,9 +79,18 @@ typedef struct __BpCallbackContext
     void *                      user;
 }BpCallbackContext;
 
+typedef struct
+{
+    duint                   addr;
+    duint                   hitCount;
+    DWORD                   options;
+    BpCallbackContext*      cbctx;
+}*PBREAKPOINT_INFO, BREAKPOINT_INFO;
+
 #define BPO_NONE                0
 #define BPO_BACKTRACK           1
 #define BPO_SINGLESHOT          2
+
 
 void AbDebuggerRun();
 
@@ -116,9 +126,15 @@ bool AbSetInstructionBreakpoint(duint instrAddr, AB_BREAKPOINT_CALLBACK callback
 
 bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcAddr, DWORD bpo, AB_BREAKPOINT_CALLBACK bpCallback, void *user);
 
-bool AbRegisterBpCallback(BpCallbackContext *cbctx);
+bool AbDeleteBreakpoint(duint addr);
 
-void AbDeregisterBpCallback(BpCallbackContext *cbctx);
 
+void AbpReleaseBreakpointResources();
+
+PBREAKPOINT_INFO AbpLookupBreakpoint(duint addr);
+
+bool AbpRegisterBreakpoint(duint addr, DWORD options, BpCallbackContext *cbctx);
+
+bool AbpDeregisterBreakpoint(duint addr);
 
 #endif // !__APIBREAK_H__

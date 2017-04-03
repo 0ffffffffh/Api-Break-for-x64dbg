@@ -10,13 +10,87 @@ using namespace Script::Symbol;
 using namespace Script::Debug;
 using namespace Script::Register;
 
+modlist                                         AbpModuleList;
+unordered_map<duint, PBREAKPOINT_INFO>          AbpBreakpointList;
 
-modlist     AbpModuleList;
+INTERNAL bool                                   AbiDetectAPIsUsingByGetProcAddress();
+INTERNAL int                                    AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunctionInfo *afi);
+INTERNAL ModuleInfo *                           AbiGetCurrentModuleInfo();
 
-INTERNAL bool AbiDetectAPIsUsingByGetProcAddress();
-INTERNAL int AbiSearchCallersForAFI(duint codeBase, duint codeSize, ApiFunctionInfo *afi);
-INTERNAL ModuleInfo *AbiGetCurrentModuleInfo();
-FORWARDED BOOL AbpNeedsReload;
+FORWARDED BOOL                                  AbfNeedsReload;
+
+void AbpReleaseBreakpointResources()
+{
+    unordered_map<duint, PBREAKPOINT_INFO>::iterator it;
+
+    if (AbpBreakpointList.size() == 0)
+        return;
+
+    while (AbpBreakpointList.size() > 0)
+    {
+        it = AbpBreakpointList.begin();
+
+        if (it->second->cbctx != NULL)
+            FREEOBJECT(it->second);
+
+        FREEOBJECT(it->second);
+        
+        AbpBreakpointList.erase(it);
+    }
+}
+
+PBREAKPOINT_INFO AbpLookupBreakpoint(duint addr)
+{
+    unordered_map<duint, PBREAKPOINT_INFO>::iterator iter;
+
+    iter = AbpBreakpointList.find(addr);
+
+    if (iter == AbpBreakpointList.end())
+        return FALSE;
+
+    return iter->second;
+}
+
+bool AbpRegisterBreakpoint(duint addr, DWORD options, BpCallbackContext *cbctx)
+{
+    PBREAKPOINT_INFO pbi;
+
+    if (AbpBreakpointList.find(addr) != AbpBreakpointList.end())
+        return false;
+
+    pbi = ALLOCOBJECT(BREAKPOINT_INFO);
+
+    if (!pbi)
+        return false;
+
+    pbi->addr = addr;
+    pbi->options = options;
+    pbi->hitCount = 0;
+    pbi->cbctx = cbctx;
+
+    AbpBreakpointList.insert({ addr,pbi });
+
+    return true;
+}
+
+bool AbpDeregisterBreakpoint(duint addr)
+{
+    unordered_map<duint, PBREAKPOINT_INFO>::iterator iter;
+
+    iter = AbpBreakpointList.find(addr);
+
+    if (iter == AbpBreakpointList.end())
+        return false;
+
+    if (iter->second->cbctx != NULL)
+        FREEOBJECT(iter->second->cbctx);
+
+    FREEOBJECT(iter->second);
+
+    AbpBreakpointList.erase(iter);
+    return true;
+}
+
 
 ModuleApiInfo *AbpSearchModuleApiInfo(const char *name)
 {
@@ -374,7 +448,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
     ModuleApiInfo *mai = NULL;
     ApiFunctionInfo *afi = NULL;
 
-    if (!AbpNeedsReload)
+    if (!AbfNeedsReload)
         return true;
 
     //First, detect dynamically loaded apis. 
@@ -458,7 +532,7 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
     else
         DBGPRINT("dynamic api detection disabled!");
 
-    AbpNeedsReload = FALSE;
+    AbfNeedsReload = FALSE;
 
 cleanAndExit:
 
@@ -528,12 +602,6 @@ void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
     REGDUMP regContext;
     duint callerIp;
 
-    if (!DbgGetRegDump(&regContext))
-    {
-        DBGPRINT("Register context could not get");
-        return;
-    }
-
     switch (bpx->bp->type)
     {
     case bp_normal:
@@ -548,10 +616,12 @@ void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
 
     if (callerIp > 0)
     {   
-        //refresh the reg dump data of the bp context
-        memcpy(&bpx->regContext, &regContext, sizeof(REGDUMP));
-        
-        AbpReturnToCaller(callerIp, regContext.regcontext.csp);
+        if (AbpReturnToCaller(callerIp, regContext.regcontext.csp))
+        {
+            bpx->regContext.regcontext.csp += sizeof(duint);
+            bpx->regContext.regcontext.cip = callerIp;
+        }
+
         AbCmdExecFormat("disasm %p", callerIp);
     }
 
@@ -587,6 +657,7 @@ bool AbSetInstructionBreakpoint(duint instrAddr, AB_BREAKPOINT_CALLBACK callback
     return AbSetBreakpointEx(NULL, NULL, &instrAddr, opt, callback, user);
 }
 
+
 bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcAddr, DWORD bpo, AB_BREAKPOINT_CALLBACK bpCallback, void *user)
 {
     bool bpSet;
@@ -621,17 +692,10 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
         if (!cbctx)
             return false;
 
-        cbctx->backTrack = bpo & BPO_BACKTRACK == BPO_BACKTRACK;
         cbctx->bpAddr = bpAddr;
         cbctx->callback = bpCallback;
         cbctx->afi = afi;
         cbctx->user = user;
-
-        if (!AbRegisterBpCallback(cbctx))
-        {
-            FREEOBJECT(cbctx);
-            return false;
-        }
     }
 
     if (bpo & BPO_SINGLESHOT)
@@ -642,9 +706,13 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
     
     if (!bpSet)
     {
-        AbDeregisterBpCallback(cbctx);
         FREEOBJECT(cbctx);
         return false;
+    }
+
+    if (!AbpRegisterBreakpoint(bpAddr, bpo, cbctx))
+    {
+        FREEOBJECT(cbctx);
     }
 
     if (!isNonApiBp)
@@ -656,3 +724,27 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
     return bpSet;
 }
 
+bool AbDeleteBreakpoint(duint addr)
+{
+    PBREAKPOINT_INFO pbi;
+    bool deleteOk;
+
+    pbi = AbpLookupBreakpoint(addr);
+
+    if (!pbi)
+        return false;
+
+    deleteOk = DeleteBreakpoint(addr);
+
+    if (deleteOk)
+    {
+        AbpDeregisterBreakpoint(addr);
+
+        if (pbi->cbctx != NULL)
+            FREEOBJECT(pbi->cbctx);
+
+        FREEOBJECT(pbi);
+    }
+
+    return deleteOk;
+}

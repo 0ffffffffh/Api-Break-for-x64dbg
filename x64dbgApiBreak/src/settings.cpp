@@ -5,13 +5,14 @@
 #define ABP_DOUBLE_VALUE    2
 #define ABP_STRING_VALUE    3
 
-#define ABP_SETTING_COUNT   5
+#define ABP_SETTING_COUNT   6
 
 #define ABS_EXPOSEDYNLDR    0
 #define ABS_GETMODHANDLE    1
 #define ABS_AUTOLOAD        2
 #define ABS_SCANAGGRESSIVE  3
 #define ABS_MAPCALLCONTEXT  4
+#define ABS_SCRIPTS         5
 
 
 struct {
@@ -23,13 +24,16 @@ struct {
     {"InclGetModHandle",ABP_BOOL_VALUE},
     {"Autoload", ABP_BOOL_VALUE},
     {"Scanaggrs", ABP_BOOL_VALUE},
-    {"Mapcallctx",ABP_BOOL_VALUE}
+    {"Mapcallctx",ABP_BOOL_VALUE},
+    {"Scripts",ABP_STRING_VALUE}
 };
 
 #define STNG_LOAD(id,val) AbpGetSetting(AbpSettingList[id].key,(char *)val,AbpSettingList[id].type)
 #define STNG_SAVE(id,val) AbpSetSetting(AbpSettingList[id].key,(char *)val,AbpSettingList[id].type)
 
-Settings AbpSettings;
+Settings AbpSettings = { 0 };
+
+#define MAX_SETTING_STRING_SIZE 65536
 
 bool AbpGetSetting(const char *key, char *valueBuf,int valueType)
 {
@@ -38,7 +42,14 @@ bool AbpGetSetting(const char *key, char *valueBuf,int valueType)
         double vdouble;
     }val;
 
-    char value[32] = { 0 };
+    char valStack[32] = { 0 };
+
+    char *value;
+
+    if (valueType == ABP_STRING_VALUE)
+        value = valueBuf;
+    else
+        value = valStack;
     
     if (BridgeSettingGet("apibreak", key, value))
     {
@@ -56,7 +67,7 @@ bool AbpGetSetting(const char *key, char *valueBuf,int valueType)
             memcpy(valueBuf, &val.vdouble, sizeof(double));
             break;
         case ABP_STRING_VALUE:
-            strcpy(valueBuf, value);
+            //strcpy(valueBuf, value);
             break;
         }
 
@@ -68,6 +79,7 @@ bool AbpGetSetting(const char *key, char *valueBuf,int valueType)
 
 bool AbpSetSetting(const char *key, char *value, int valueType)
 {
+    bool ok;
     union {
         char *intptr;
         int vint;
@@ -75,7 +87,14 @@ bool AbpSetSetting(const char *key, char *value, int valueType)
         double vdouble;
     }val;
 
-    char valueBuf[32] = { 0 };
+    char vbStack[32] = { 0 };
+
+    char *valueBuf = NULL;
+
+    if (valueType == ABP_STRING_VALUE)
+        valueBuf = value;
+    else
+        valueBuf = vbStack;
 
     val.intptr = value;
 
@@ -96,11 +115,16 @@ bool AbpSetSetting(const char *key, char *value, int valueType)
         break;
     }
 
-    return BridgeSettingSet("apibreak", key, valueBuf);
+    ok = BridgeSettingSet("apibreak", key, valueBuf);
+
+    return ok;
 }
 
 bool AbSettingsLoad()
 {
+    if (!AbpSettings.mainScripts)
+        AbpSettings.mainScripts = ALLOCSTRINGA(MAX_SETTING_STRING_SIZE);
+
     if (!STNG_LOAD(ABS_EXPOSEDYNLDR, &AbpSettings.exposeDynamicApiLoads))
         AbpSettings.exposeDynamicApiLoads = false;
 
@@ -115,6 +139,10 @@ bool AbSettingsLoad()
 
     if (!STNG_LOAD(ABS_MAPCALLCONTEXT, &AbpSettings.mapCallContext))
         AbpSettings.mapCallContext = false;
+
+    STNG_LOAD(ABS_SCRIPTS, AbpSettings.mainScripts);
+
+
 
     return true;
 }
@@ -134,6 +162,9 @@ bool AbSettingsSave()
         return false;
 
     if (!STNG_SAVE(ABS_MAPCALLCONTEXT, AbpSettings.mapCallContext))
+        return false;
+
+    if (!STNG_SAVE(ABS_SCRIPTS, AbpSettings.mainScripts))
         return false;
 
     return true;

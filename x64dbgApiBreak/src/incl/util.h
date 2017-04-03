@@ -74,7 +74,7 @@ BOOL DmaPrepareForRead(PDMA dma, void **nativeMem);
 void DmaDestroyAdapter(PDMA dma);
 
 
-BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, PPASSED_PARAMETER_CONTEXT *paramInfo);
+BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, BOOL ipOnStack, PPASSED_PARAMETER_CONTEXT *paramInfo);
 
 duint UtlGetCallerAddress(REGDUMP *regdump);
 

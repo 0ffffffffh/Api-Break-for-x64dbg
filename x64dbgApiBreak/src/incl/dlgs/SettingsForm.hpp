@@ -12,6 +12,8 @@ private:
     UiCheckBox *chkDetectDynLdr, *chkInclGetModHandle,
         *chkAutoload,*chkMapCallctx;
 
+    UiControlBase *txtScripts;
+
     void FillGui()
     {
         Settings *settings = AbGetSettings();
@@ -20,15 +22,27 @@ private:
         this->chkInclGetModHandle->SetState(settings->includeGetModuleHandle);
         this->chkAutoload->SetState(settings->autoLoadData);
         this->chkMapCallctx->SetState(settings->mapCallContext);
+
+        if (settings->mainScripts != NULL)
+        {
+            HlpReplaceStringA(settings->mainScripts, MAX_SETTING_SIZE, ";", "\r\n");
+            this->txtScripts->SetStringA(settings->mainScripts);
+        }
     }
 
     void GetFromGUI()
     {
         Settings *setting = AbGetSettings();
+        LPSTR scripts;
+
         setting->exposeDynamicApiLoads = this->chkDetectDynLdr->GetState();
         setting->includeGetModuleHandle = this->chkInclGetModHandle->GetState();
         setting->autoLoadData = this->chkAutoload->GetState();
         setting->mapCallContext = this->chkMapCallctx->GetState();
+
+        txtScripts->GetStringA(&setting->mainScripts, MAX_SETTING_SIZE);
+        HlpReplaceStringA(setting->mainScripts, MAX_SETTING_SIZE, "\r\n", ";");
+
     }
 
     bool LoadSettings()
@@ -88,6 +102,7 @@ public:
         this->chkInclGetModHandle = GetControlById<UiCheckBox>(IDC_CHKINSPGETMODULEHANDLE);
         this->chkAutoload = GetControlById<UiCheckBox>(IDC_CHKAUTOLOAD);
         this->chkMapCallctx = GetControlById<UiCheckBox>(IDC_CHKMAPCALLCTX);
+        this->txtScripts = GetControlById<UiControlBase>(IDC_TXTMAINSCRIPTS);
 
         LoadSettings();
 

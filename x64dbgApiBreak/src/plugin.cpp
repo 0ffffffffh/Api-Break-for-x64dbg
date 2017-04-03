@@ -2,6 +2,8 @@
 #include <settings.h>
 #include <dlgs/MainForm.hpp>
 #include <dlgs/SettingsForm.hpp>
+#include <structmemmap.h>
+
 
 #define MN_BASE                 0xFA00FA
 
@@ -28,17 +30,17 @@ const char *DBGSTATE_STRINGS[5] =
 
 BYTE                                AbpDbgState;
 Script::Module::ModuleInfo          AbpCurrentMainModule;
-BOOL                                AbpNeedsReload=FALSE;
+BOOL                                AbfNeedsReload=FALSE;
 
-INTERNAL int        AbPluginHandle;
-INTERNAL HWND       AbHwndDlgHandle;
-INTERNAL int        AbMenuHandle;
-INTERNAL int        AbMenuDisasmHandle;
-INTERNAL int        AbMenuDumpHandle;
-INTERNAL int        AbMenuStackHandle;
-INTERNAL HMODULE    AbPluginModule;
+INTERNAL int                        AbPluginHandle;
+INTERNAL HWND                       AbHwndDlgHandle;
+INTERNAL int                        AbMenuHandle;
+INTERNAL int                        AbMenuDisasmHandle;
+INTERNAL int                        AbMenuDumpHandle;
+INTERNAL int                        AbMenuStackHandle;
+INTERNAL HMODULE                    AbPluginModule;
 
-INTERNAL WORD       AbParsedTypeCount = 0;
+INTERNAL WORD                       AbParsedTypeCount = 0;
 
 INTERNAL void AbiRaiseDeferredLoader(const char *dllName, duint base);
 
@@ -47,72 +49,50 @@ INTERNAL void AbiUninitDynapi();
 INTERNAL void AbiReleaseDeferredResources();
 INTERNAL void AbiEmptyInstructionCache();
 
-unordered_map<duint, BpCallbackContext *>   AbpBpCallbacks;
-BOOL                                        AbpHasPendingInit = FALSE;
+BOOL                                AbpHasPendingInit = FALSE;
 
 INTERNAL_EXPORT Script::Module::ModuleInfo *AbiGetCurrentModuleInfo()
 {
     return &AbpCurrentMainModule;
 }
 
-BpCallbackContext *AbpLookupBpCallback(duint addr)
-{
-    unordered_map<duint, BpCallbackContext *>::iterator it;
 
-    if (AbpBpCallbacks.size() == 0)
-        return NULL;
-
-    it = AbpBpCallbacks.find(addr);
-
-    if (it == AbpBpCallbacks.end())
-        return NULL;
-
-    return it->second;
-}
-
-void AbpReleaseBreakpointCallbackResources()
-{
-    unordered_map<duint, BpCallbackContext *>::iterator it;
-
-    if (AbpBpCallbacks.size() == 0)
-        return;
-
-    while (AbpBpCallbacks.size() > 0)
-    {
-        it = AbpBpCallbacks.begin();
-        FREEOBJECT(it->second);
-        AbpBpCallbacks.erase(it);
-    }
-
-}
-
-bool AbRegisterBpCallback(BpCallbackContext *cbctx)
-{
-    if (AbpLookupBpCallback(cbctx->bpAddr))
-        return false;
-
-    AbpBpCallbacks.insert({ cbctx->bpAddr, cbctx });
-
-    return true;
-}
-
-
-void AbDeregisterBpCallback(BpCallbackContext *cbctx)
-{
-    unordered_map<duint, BpCallbackContext *>::iterator iter;
-
-    iter = AbpBpCallbacks.find(cbctx->bpAddr);
-
-    if (iter == AbpBpCallbacks.end())
-        return;
-
-    AbpBpCallbacks.erase(iter);
-}
 
 int WINAPI Loader(void *)
 {
     AbLoadAvailableModuleAPIs(true);
     return 0;
+}
+
+void AbpParseScripts()
+{
+    char *tokCtx;
+    char *scripts = NULL;
+    char *line;
+
+    if (!AbGetSettings()->mainScripts)
+        return;
+
+    scripts = HlpCloneStringA(AbGetSettings()->mainScripts);
+
+    if (!scripts)
+    {
+        DBGPRINT("memory error");
+        return;
+    }
+
+    line = strtok_s(scripts, "\r\n;", &tokCtx);
+
+    while (line)
+    {
+        DBGPRINT("Parsing '%s'", line);
+        SmmParseFromFileA(line, &AbParsedTypeCount);
+        line = strtok_s(NULL, "\r\n;", &tokCtx);
+    }
+
+    DBGPRINT("%d type(s) parsed.", AbParsedTypeCount);
+
+    FREESTRING(line);
 }
 
 void AbpOnDebuggerStateChanged(BYTE state, const char *module)
@@ -157,7 +137,7 @@ void AbReleaseAllSystemResources(bool isInShutdown)
 
     AbiEmptyInstructionCache();
     AbiReleaseDeferredResources();
-    AbpReleaseBreakpointCallbackResources();
+    AbpReleaseBreakpointResources();
     AbReleaseModuleResources();
 
     if (isInShutdown)
@@ -172,13 +152,8 @@ void __AbpInitMenu()
     _plugin_menuaddentry(AbMenuHandle, MN_SHOWMAINFORM, "set an API breakpoint");
     _plugin_menuaddentry(AbMenuHandle, MN_SHOWSETTINGSFORM, "settings");
     _plugin_menuaddentry(AbMenuHandle, MN_ABOUT, "about?");
-
-#if 1
-    _plugin_menuaddentry(AbMenuHandle, MN_TESTSLOT, "Test??");
-#endif
 }
 
-#include <structmemmap.h>
 
 DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
 {
@@ -209,12 +184,7 @@ DBG_LIBEXPORT void plugsetup(PLUG_SETUPSTRUCT* setupStruct)
 
     __AbpInitMenu();
 
-    if (SmmParseFromFileW(L"E:\\main.abtf", &AbParsedTypeCount))
-    {
-        DBGPRINT("%d type(s) parsed.", AbParsedTypeCount);
-    }
-
-
+    AbpParseScripts();
 }
 
 
@@ -246,11 +216,6 @@ DBG_LIBEXPORT void CBMENUENTRY(CBTYPE cbType, PLUG_CB_MENUENTRY* info)
         SettingsForm *settingsForm = new SettingsForm();
         settingsForm->ShowDialog();
     }
-#if 1
-    else if (info->hEntry == MN_TESTSLOT)
-    {
-    }
-#endif
 }
 
 
@@ -276,7 +241,7 @@ DBG_LIBEXPORT void CBSYSTEMBREAKPOINT(CBTYPE cbType, PLUG_CB_SYSTEMBREAKPOINT *s
     }
 }
 
-PPASSED_PARAMETER_CONTEXT AbpExtractPassedParameterContext(REGDUMP *regdump, PFNSIGN fnSign)
+PPASSED_PARAMETER_CONTEXT AbpExtractPassedParameterContext(REGDUMP *regdump, PFNSIGN fnSign, BOOL ipOnStack)
 {
     SHORT argCount;
     PPASSED_PARAMETER_CONTEXT ppc;
@@ -290,7 +255,7 @@ PPASSED_PARAMETER_CONTEXT AbpExtractPassedParameterContext(REGDUMP *regdump, PFN
     conv = Stdcall;
 #endif
 
-    if (!UtlExtractPassedParameters(argCount, conv, regdump, &ppc))
+    if (!UtlExtractPassedParameters(argCount, conv, regdump,ipOnStack, &ppc))
     {
         DBGPRINT("Parameter extraction failed");
         return NULL;
@@ -302,8 +267,6 @@ PPASSED_PARAMETER_CONTEXT AbpExtractPassedParameterContext(REGDUMP *regdump, PFN
 
 void AbpGhostBreakpointHandler(BpCallbackContext *bpx)
 {
-    DBGPRINT("BREAKPOINT TRAP");
-    bpx->user = (void *)0xDEADBEEF;
 }
 
 LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
@@ -320,7 +283,7 @@ LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
     BpCallbackContext *bpcb = (BpCallbackContext *)p;
     
     sprintf(msgBuf, "One of the parameters of the %s is marked as out. "
-        "That Means, you need to execute the api, to get all parameter result correct.\n\n"
+        "That Means, you need to execute the api, to get all parameter result correctly.\n\n"
         "Want to execute the API now?",bpcb->afi->name);
 
     willContinue = MessageBoxA(NULL, msgBuf, "Quest", MB_ICONQUESTION | MB_YESNO) == IDYES;
@@ -364,36 +327,47 @@ LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
 DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 {
     BpCallbackContext *bpcb = NULL;
+    PBREAKPOINT_INFO pbi;
+    BOOL isBacktrackBp;
     PPASSED_PARAMETER_CONTEXT ppc;
     PFNSIGN fnSign = NULL;
-    
-    bpcb = AbpLookupBpCallback(info->breakpoint->addr);
 
-    if (bpcb != NULL)
+    pbi = AbpLookupBreakpoint(info->breakpoint->addr);
+
+    bpcb = pbi->cbctx;
+
+    if (pbi != NULL)
     {
-        DBGPRINT("Special breakpoint detected. Raising the breakpoint callback");
+        DBGPRINT("Special breakpoint detected.");
 
-        //get current register context for current state
-        DbgGetRegDump(&bpcb->regContext);
+        pbi->hitCount++;
 
-        bpcb->bp = info->breakpoint;
+        if (bpcb != NULL)
+        {
+            DBGPRINT("Breakpoint has registered callback. Raising the breakpoint callback");
 
-        
-        if (bpcb->callback != NULL)
-            bpcb->callback(bpcb);
+            //get current register context for current state
+            DbgGetRegDump(&bpcb->regContext);
 
-        
+            bpcb->bp = info->breakpoint;
+
+            if (bpcb->callback != NULL)
+                bpcb->callback(bpcb);
+        }
+
         if (AbGetSettings()->mapCallContext)
         {
             if (SmmGetFunctionSignature2(bpcb->afi, &fnSign))
             {
                 DBGPRINT("Function mapping signature found. Mapping...");
 
-                ppc = AbpExtractPassedParameterContext(&bpcb->regContext, fnSign);
-                
+                isBacktrackBp = (pbi->options & BPO_BACKTRACK) == BPO_BACKTRACK;
+
+                ppc = AbpExtractPassedParameterContext(&bpcb->regContext, fnSign,!isBacktrackBp);
+
                 if (SmmSigHasOutArgument(fnSign))
                 {
-                    DBGPRINT("%s has an out marked function. ",bpcb->afi->name);
+                    DBGPRINT("%s has an out marked function. ", bpcb->afi->name);
                     bpcb->user = ppc;
                     QueueUserWorkItem((LPTHREAD_START_ROUTINE)AbpShowOutputArgumentQuestion, bpcb, WT_EXECUTELONGFUNCTION);
                 }
@@ -401,6 +375,9 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
                     SmmMapFunctionCall(ppc, fnSign, bpcb->afi);
             }
         }
+
+        if (pbi->options & BPO_SINGLESHOT)
+            AbDeleteBreakpoint(pbi->addr);
     }
     else
     {
@@ -425,7 +402,7 @@ DBG_LIBEXPORT void CBCREATEPROCESS(CBTYPE cbType, PLUG_CB_CREATEPROCESS *newProc
 resumeExec:
 
     AbGetDebuggedModuleInfo(&AbpCurrentMainModule);
-    AbpNeedsReload = TRUE;
+    AbfNeedsReload = TRUE;
 
     AbpRaiseDbgStateChangeEvent();
 }

@@ -119,62 +119,85 @@ bool  HlpTrimChar(LPSTR str, CHAR chr, int option)
     return false;
 }
 
-void HlppMemMoveSecure(BYTE *memSrc, BYTE *memDest, ULONG moveSize)
-{
-    memmove(memDest, memSrc, moveSize);
-}
-
 #include <util.h>
 
 bool HlpReplaceStringW(LPWSTR string, ULONG stringMaxSize, LPCWSTR find, LPCWSTR replace)
 {
     bool result = false;
-    ULONG temp=0, foundIndex=0;
-    ULONG findLen, replLen;
+    ULONG fCount=0, foundIndex=0;
+    LONG findLen, replLen, strLen, copyLen;
     LPWSTR px;
     LONG shiftDelta;
     PDMA dma;
+    BYTE *memSrc, *memDst;
 
     if (!DmaCreateAdapter(sizeof(ULONG), 20, &dma))
         return false;
 
     findLen = wcslen(find);
     replLen = wcslen(replace);
-
+    strLen = wcslen(string);
     
     shiftDelta = replLen - findLen;
+    
+    px = string - 1;
 
     while(1)
     {
-        px = wcsstr(string, find);
+        px = wcsstr(px + 1, find);
         
         if (!px)
             break;
 
         foundIndex = px - string;
 
+        if (fCount)
+            foundIndex += fCount * shiftDelta;
+
         DmaWrite(dma, DMA_AUTO_OFFSET, sizeof(ULONG), &foundIndex);
 
-        temp++;
+        fCount++;
     }
 
-    if (!temp)
+    if (!fCount)
         goto exit;
 
     if (shiftDelta > 0)
     {
-        if ((shiftDelta * temp) > stringMaxSize)
+        if (strLen + (shiftDelta * fCount) > stringMaxSize)
             goto exit;
     }
 
-    for (int i = 0;i < temp;temp++)
+    for (int i = 0;i < fCount;i++)
     {
         DmaReadTypeAlignedSequence(dma, i, 1, &foundIndex);
+        memSrc = (BYTE *)((foundIndex + findLen) * sizeof(WCHAR));
+        memDst = (BYTE *)((foundIndex + replLen) * sizeof(WCHAR));
 
-        px = string + foundIndex + findLen;
+        memSrc += (duint)string;
+        memDst += (duint)string;
 
-        HlppMemMoveSecure((BYTE *)px, (BYTE *)(px + shiftDelta), stringMaxSize - (foundIndex + findLen + 1));
+        copyLen = (strLen - ((LPWSTR)memSrc - string)) * sizeof(WCHAR);
+
+        memmove(memDst, memSrc, copyLen);
+
+        
+        if (shiftDelta < 0)
+        {
+            //That's a reducing of the string. We need to null-term new end of the string
+
+            *((LPWSTR)(memSrc + copyLen - sizeof(WCHAR) * abs(shiftDelta)))
+                = L'\0';
+        }
+
+        memcpy(string + foundIndex, replace, sizeof(WCHAR) * replLen);
+
+
+        strLen += shiftDelta;
+
     }
+
+    result = true;
 
 exit:
 
@@ -186,23 +209,27 @@ exit:
 bool HlpReplaceStringA(LPSTR string, ULONG stringMaxSize, LPCSTR find, LPCSTR replace)
 {
     bool result;
-    LPWSTR stringW = HlpAnsiToWideString(string);
-    LPWSTR bufStringW = NULL;
+    LPWSTR stringW;
     LPWSTR findW, replaceW;
+    LPSTR resultA;
 
-    bufStringW = ALLOCSTRINGW(stringMaxSize);
-
-    wcscpy(bufStringW, stringW);
-
-    FREESTRING(stringW);
+    stringW = HlpAnsiToWideString(string);
 
     findW = HlpAnsiToWideString(find);
     replaceW = HlpAnsiToWideString(replace);
 
-    result = HlpReplaceStringW(bufStringW, stringMaxSize, findW, replaceW);
+    result = HlpReplaceStringW(stringW, stringMaxSize, findW, replaceW);
 
     FREESTRING(findW);
     FREESTRING(replaceW);
+
+    resultA = HlpWideToAnsiString(stringW);
+
+    FREESTRING(stringW);
+
+    strcpy(string, resultA);
+
+    FREESTRING(resultA);
 
     return result;
 }

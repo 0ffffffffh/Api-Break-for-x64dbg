@@ -183,8 +183,9 @@ static struct {
 WCHAR SmmpScriptWorkDir[MAX_PATH] = { 0 };
 BOOL SmmpWorkDirIsLocal = TRUE;
 
-PSLIST SmmpUserTypeList = NULL, SmmpFnSignList = NULL;
-PSLIST SmmpTypeList = NULL;
+PSLIST  SmmpUserTypeList = NULL, SmmpFnSignList = NULL;
+PSLIST  SmmpTypeList = NULL;
+PDMA    SmmpParseErrorContent = NULL;
 
 WORKDIR_STACK SmmpWorkDirStack;
 
@@ -267,7 +268,10 @@ void SmmpRaiseParseError(LONG err)
 
     if (err >= 0 && err <= totalErrString)
     {
-        DBGPRINT2(FAIL_MESSAGES[err - 1]);
+        if (SmmpParseErrorContent)
+            DmaStringWriteA(SmmpParseErrorContent, "%s\r\n", FAIL_MESSAGES[err - 1]);
+        else
+            DBGPRINT2(FAIL_MESSAGES[err - 1]);
     }
 }
 
@@ -743,6 +747,10 @@ exit:
     *beginNode = node;
     *fieldPtr = field;
 
+
+    if (!success)
+        SmmpRaiseParseError(failStep);
+
     return success;
 }
 
@@ -809,22 +817,22 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 
     strcpy(module, Stringof(node));
 
-    if (!SmmpNextnode(&node))
-        return FALSE;
+    if (!SmmpNextnode(&node)) 
+        return FALSE; //! token expected
 
     if (*Stringof(node) != '!')
-        return FALSE;
+        return FALSE; //! token expected
 
     if (!SmmpNextnode(&node))
-        return FALSE;
+        return FALSE; // module name expected
 
     strcpy(name, Stringof(node));
 
     if (!SmmpNextnode(&node))
-        return FALSE;
+        return FALSE; // ( expected
 
     if (*Stringof(node) != '(')
-        return FALSE;
+        return FALSE; //( expected
 
     argList = ALLOCOBJECTLIST(ARGINFO, 10);
     fnSign = ALLOCOBJECT(FNSIGN);
@@ -832,10 +840,22 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 
     DBGPRINT("parsing signature %s!%s", module, name);
 
+    if (SmmpIsSpecialToken(*Stringof(node)))
+    {
+        if (*Stringof(node) == ')')
+        {
+            FREEOBJECT(argList);
+            argList = NULL;
+            argCount = 0;
+
+            goto finish;
+        }
+    }
+
     do
     {
         if (!SmmpNextnode(&node))
-            return FALSE;
+            return FALSE; //Unexpected terminated syntax
 
         memset(argType, 0, sizeof(argType));
         memset(argName, 0, sizeof(argName));
@@ -843,7 +863,7 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
         isPtr = FALSE;
 
         if (SmmpIsSpecialToken(*Stringof(node)))
-            return FALSE;
+            return FALSE; //Unexpected token
 
         if (!_stricmp(Stringof(node), "out"))
             argInOut = ARG_OUT;
@@ -917,6 +937,8 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 
     if (!SmmpNextnode(&node))
         node = NULL;
+
+finish:
 
     fnSign->argCount = argCount;
     fnSign->args = argList;
@@ -1538,6 +1560,8 @@ BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount)
         if (!SmmpInitBasePrimitiveTypes())
             goto exit;
 
+        DmaCreateAdapter(sizeof(char), 64, &SmmpParseErrorContent);
+
         SmmpInitWorkdirStack();
 
         *typeCount = 0;
@@ -1738,4 +1762,10 @@ VOID SmmReleaseResources()
     }
 
     SmmpInitWorkdirStack();
+
+    if (SmmpParseErrorContent)
+    {
+        DmaDestroyAdapter(SmmpParseErrorContent);
+        SmmpParseErrorContent = NULL;
+    }
 }
