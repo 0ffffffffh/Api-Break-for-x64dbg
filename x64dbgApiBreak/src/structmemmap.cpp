@@ -19,26 +19,38 @@
 
 
 #define FAILBASE_SYSTEM                 0
-#define FAILBASE_TYPESTRUCT             4
-#define FAILBASE_FIELD_DEF              FAILBASE_TYPESTRUCT + 5
-#define FAILBASE_SYNTAX                 FAILBASE_FIELD_DEF
+#define FAILBASE_PARSER                 FAILBASE_SYSTEM + 4
+
 
 #define FS_MEMERR                       FAILBASE_SYSTEM + 1
+#define FS_RESERVED1                    FAILBASE_SYSTEM + 2
+#define FS_RESERVED2                    FAILBASE_SYSTEM + 3
+#define FS_RESERVED3                    FAILBASE_SYSTEM + 4
 
-#define FS_MAPTYPE                      FAILBASE_TYPESTRUCT + 1
-#define FS_TYPENAME                     FAILBASE_TYPESTRUCT + 2
-#define FS_BRACKOPEN                    FAILBASE_TYPESTRUCT + 3
-#define FS_EXPECTFIELD                  FAILBASE_TYPESTRUCT + 4
-#define FS_BRACKCLOSE                   FAILBASE_TYPESTRUCT + 5
+#define FS_MAPTYPE                      FAILBASE_PARSER + 1
+#define FS_TYPENAME                     FAILBASE_PARSER + 2
+#define FS_BRACKOPEN                    FAILBASE_PARSER + 3
+#define FS_EXPECTFIELD                  FAILBASE_PARSER + 4
+#define FS_BRACKCLOSE                   FAILBASE_PARSER + 5
 
-#define FS_NOFIELDTYPE                  FAILBASE_FIELD_DEF + 1
-#define FS_EXPECTFIELDNAME              FAILBASE_FIELD_DEF + 2
-#define FS_EXPECTSQUBRCKOPEN            FAILBASE_FIELD_DEF + 3
-#define FS_EXPECTSQUBRCKCLOSE           FAILBASE_FIELD_DEF + 4
-#define FS_EXPECTARRSIZE                FAILBASE_FIELD_DEF + 5
-#define FS_EXPECTSEMICOLON              FAILBASE_FIELD_DEF + 6
+#define FS_NOFIELDTYPE                  FAILBASE_PARSER + 6
+#define FS_EXPECTFIELDNAME              FAILBASE_PARSER + 7
+#define FS_EXPECTSQUBRCKOPEN            FAILBASE_PARSER + 8
+#define FS_EXPECTSQUBRCKCLOSE           FAILBASE_PARSER + 9
+#define FS_EXPECTARRSIZE                FAILBASE_PARSER + 10
+#define FS_EXPECTSEMICOLON              FAILBASE_PARSER + 11
 
-#define FS_EXPECTINCLFILEPATH           FAILBASE_SYNTAX + 1
+#define FS_EXPECTNOTOP                  FAILBASE_PARSER + 12
+#define FS_EXPECTPARANOPEN              FAILBASE_PARSER + 13
+#define FS_EXPECTPARANCLOSE             FAILBASE_PARSER + 14
+#define FS_EXPECTTYPE                   FAILBASE_PARSER + 15
+#define FS_EXPECTARGNAME                FAILBASE_PARSER + 16
+#define FS_EXPECTMODNAME                FAILBASE_PARSER + 17
+#define FS_UNEXPECTED_TOKEN             FAILBASE_PARSER + 18
+#define FS_UNEXPECTED_SYTX_END          FAILBASE_PARSER + 19
+
+#define FS_TYPENOTFOUND                 FAILBASE_PARSER + 20
+#define FS_EXPECTINCLFILEPATH           FAILBASE_PARSER + 21
 
 //LINKED LIST
 
@@ -209,6 +221,15 @@ const char *FAIL_MESSAGES[] =
     "expected array size",
     "expected ';' to complete field definition",
     ///////////////
+    "expected '!'",
+    "expected '('",
+    "expected ')'",
+    "type expected",
+    "argument name expected",
+    "module name expected",
+    "unexpected token",
+    "unexpected syntax ending",
+    "Type not found",
     "filepath expected for @incl."
 };
 
@@ -805,34 +826,33 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 {
     char name[128] = { 0 }, module[128] = { 0 };
     char argType[64], argName[128];
-    PARGINFO argList;
+    PARGINFO argList = NULL;
     SHORT argCount = 0;
-    PFNSIGN fnSign;
-    PVOID argTypeInfo;
+    PFNSIGN fnSign = NULL;
+    PVOID argTypeInfo = NULL;
     BOOL isPrimitive=FALSE,isPtr=FALSE;
-    int argInOut = 0;
+    int argInOut = 0,failStep=0;
 
     PSLISTNODE node = (*startNode)->next;
 
-
     strcpy(module, Stringof(node));
 
-    if (!SmmpNextnode(&node)) 
-        return FALSE; //! token expected
+    if (!SmmpNextnode(&node))
+        OneWayExit(FS_EXPECTNOTOP, finish);
 
     if (*Stringof(node) != '!')
-        return FALSE; //! token expected
+        OneWayExit(FS_EXPECTNOTOP, finish);
 
     if (!SmmpNextnode(&node))
-        return FALSE; // module name expected
+        OneWayExit(FS_EXPECTMODNAME, finish);
 
     strcpy(name, Stringof(node));
 
     if (!SmmpNextnode(&node))
-        return FALSE; // ( expected
+        OneWayExit(FS_EXPECTPARANOPEN, finish);
 
     if (*Stringof(node) != '(')
-        return FALSE; //( expected
+        OneWayExit(FS_EXPECTPARANOPEN, finish);
 
     argList = ALLOCOBJECTLIST(ARGINFO, 10);
     fnSign = ALLOCOBJECT(FNSIGN);
@@ -855,7 +875,7 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
     do
     {
         if (!SmmpNextnode(&node))
-            return FALSE; //Unexpected terminated syntax
+            OneWayExit(FS_UNEXPECTED_SYTX_END, finish);
 
         memset(argType, 0, sizeof(argType));
         memset(argName, 0, sizeof(argName));
@@ -863,7 +883,7 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
         isPtr = FALSE;
 
         if (SmmpIsSpecialToken(*Stringof(node)))
-            return FALSE; //Unexpected token
+            OneWayExit(FS_UNEXPECTED_TOKEN, finish);
 
         if (!_stricmp(Stringof(node), "out"))
             argInOut = ARG_OUT;
@@ -873,41 +893,39 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
         if (argInOut > 0)
         {
             if (!SmmpNextnode(&node))
-                return FALSE;
+                OneWayExit(FS_EXPECTTYPE, finish);
 
             if (SmmpIsSpecialToken(*Stringof(node)))
-                return FALSE;
+                OneWayExit(FS_EXPECTTYPE, finish);
         }
 
         strcpy(argType, Stringof(node));
 
         if (!SmmpNextnode(&node))
-            return FALSE;
+            OneWayExit(FS_EXPECTARGNAME, finish);
 
         if (IsPtrChar(node))
         {
             isPtr = TRUE;
 
             if (!SmmpNextnode(&node))
-                return FALSE;
+                OneWayExit(FS_EXPECTARGNAME, finish);
 
             if (SmmpIsSpecialToken(*Stringof(node)))
-                return FALSE;
+                OneWayExit(FS_EXPECTARGNAME, finish);
         }
 
 
         strcpy(argName, Stringof(node));
 
         if (!SmmpNextnode(&node))
-            return FALSE;
+            OneWayExit(FS_UNEXPECTED_SYTX_END, finish);
 
         strcpy(argList[argCount].name, argName);
 
         if (!SmmpGetTypeInfoByName(argType, &argTypeInfo, &isPrimitive))
         {
-            FREEOBJECT(fnSign);
-            FREEOBJECT(argList);
-            return FALSE;
+            OneWayExit(FS_TYPENOTFOUND, finish);
         }
 
         argList[argCount].isStructure = !isPrimitive;
@@ -930,15 +948,26 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 
     if (*Stringof(node) != ')')
     {
-        FREEOBJECT(fnSign);
-        FREEOBJECT(argList);
-        return FALSE;
+        OneWayExit(FS_EXPECTPARANCLOSE, finish);
     }
 
     if (!SmmpNextnode(&node))
         node = NULL;
 
 finish:
+
+    if (failStep > 0)
+    {
+        SmmpRaiseParseError(failStep);
+
+        if (fnSign != NULL)
+            FREEOBJECT(fnSign);
+
+        if (argList != NULL)
+            FREEOBJECT(argList);
+
+        return FALSE;
+    }
 
     fnSign->argCount = argCount;
     fnSign->args = argList;
