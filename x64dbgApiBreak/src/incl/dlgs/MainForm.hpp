@@ -6,8 +6,13 @@
 
 #include <resource.h>
 
-#define SETSTATUS(x,...) this->SetControlTextFormatA(IDC_LBLSTATUS, "Status: " ## x, __VA_ARGS__)
-#define _SETSTATUS(x,...) _this->SetControlTextFormatA(IDC_LBLSTATUS, "Status: " ## x, __VA_ARGS__)
+#define ST_SUCCESS      RGB(0x0,0xae,0x0)
+#define ST_FAIL         RGB(0xce,0x0,0x0)
+#define ST_INFO         RGB(0x0,0x0,0xff)
+#define ST_WARN         RGB(0xff,0x4f,0)
+
+#define SETSTATUS(t,x,...) this->lblStatus->DrawStringFormatA(1,1,t,"Status: " ## x, __VA_ARGS__)
+#define _SETSTATUS(t,x,...) _this->lblStatus->DrawStringFormatA(1,1,t,"Status: " ## x, __VA_ARGS__)
 
 class MainForm : public UiWrapper
 {
@@ -30,7 +35,6 @@ private:
     {
         char moduleName[256] = { 0 };
         char funcName[256] = { 0 };
-        LPSTR buffer;
         duint apiAddr;
         bool isSet;
         bool bpOnXrefs = false;
@@ -40,43 +44,26 @@ private:
 
         bpOnXrefs = (bool)chkUseXref->SendControlMsg(BM_GETCHECK, NULL, NULL);
         
-        if (!HlpPrintFormatBufferA(&buffer, "Going to set a BP at %s!%s\r\nis that ok?", moduleName, funcName))
+        if (bpOnXrefs)
         {
-            MsgBoxError("Memory error", "error");
-            return;
-        }
+            isSet = AbSetAPIBreakpointOnCallers(moduleName, funcName);
 
-        if (MsgBoxQuestion(buffer, "confirm") == IDYES)
-        {
-            if (bpOnXrefs)
-            {
-                isSet = AbSetAPIBreakpointOnCallers(moduleName, funcName);
-
-                if (isSet)
-                    MsgBoxInfo("Api breakpoint set", "ok");
-                else
-                    MsgBoxError("Bp could not be set", "error");
-
-            }
+            if (isSet)
+                SETSTATUS(ST_SUCCESS,"Api breakpoint set");
             else
-            {
-                
-                isSet = AbSetAPIBreakpoint(moduleName, funcName, &apiAddr);
+                SETSTATUS(ST_FAIL,"Bp could not be set");
 
-                if (isSet)
-                {
-                    FREESTRING(buffer);
-                    HlpPrintFormatBufferA(&buffer, "the breakpoint is set at \r\n0x%p (%s!%s)", apiAddr, moduleName, funcName);
-                    SETSTATUS("Breakpoint is set");
-
-                    MsgBoxInfo(buffer, "ok");
-                }
-                else
-                    MsgBoxError("The bp could not be set", "error");
-            }
         }
+        else
+        {
+                
+            isSet = AbSetAPIBreakpoint(moduleName, funcName, &apiAddr);
 
-        FREESTRING(buffer);
+            if (isSet)
+                SETSTATUS(ST_SUCCESS,"Breakpoint is set");
+            else
+                SETSTATUS(ST_FAIL,"The bp could not be set");
+        }
 
     }
 
@@ -116,7 +103,7 @@ private:
 
             _this->SetControlTextFormatA(IDC_GRPMOD, "Imported modules && APIs by \"%s\"", processName);
             _this->EnableControl(IDC_BTNSETBP);
-            _SETSTATUS("%d module(s) loaded",modCount);
+            _SETSTATUS(ST_INFO,"%d module(s) loaded",modCount);
         }
         return 0;
     }
@@ -159,14 +146,16 @@ public :
         this->chkUseXref = GetControlById<UiControlBase>(IDC_CHKBPONXREFS);
         this->lblStatus = GetControlById<UiControlBase>(IDC_LBLSTATUS);
 
+        this->lblStatus->EnableOwnerDraw();
+
         DisableControl(IDC_BTNSETBP);
 
-        SETSTATUS("Loading modules");
+        SETSTATUS(ST_INFO,"Loading modules");
 
         if (AbHasDebuggingProcess())
             QueueUserWorkItem((LPTHREAD_START_ROUTINE)ApiLoadWorker, this, WT_EXECUTEDEFAULT);
         else
-            SETSTATUS("There is no debug process");
+            SETSTATUS(ST_WARN,"There is no debug process");
     }
 
     bool ShowDialog()

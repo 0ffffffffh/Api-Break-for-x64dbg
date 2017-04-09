@@ -42,8 +42,8 @@ typedef unsigned char uchar;
 #define _stringfy(x) #x
 
 #define AB_VERSION_MAJOR 0
-#define AB_VERSION_MINOR 4
-#define AB_VERSION_BUILD 28
+#define AB_VERSION_MINOR 5
+#define AB_VERSION_BUILD 30
 
 #if _WIN64
 #define AB_PLATFORM     "x64"

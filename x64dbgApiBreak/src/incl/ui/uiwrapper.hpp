@@ -37,6 +37,9 @@ private:
         case WM_CLOSE:
             _this->OnClose();
             break;
+        case WM_DRAWITEM:
+            _this->OnDrawItem((LPDRAWITEMSTRUCT)lp, (LONG)wp);
+            return TRUE;
         case WM_QUIT:
             _this->OnDestroyed();
             break;
@@ -378,6 +381,19 @@ public:
             if (ctrl != nullptr)
                 ctrl->OnCommand(wp);
         }
+    }
+
+    virtual void OnDrawItem(LPDRAWITEMSTRUCT dis, LONG ctrlId)
+    {
+        UiControlBase *ctrl = NULL;
+
+        HWND wnd = GetDlgItem(GetHWND(), ctrlId);
+        DBGPRINT("AX");
+        ctrl = LookupControl(wnd);
+
+        if (ctrl != nullptr)
+            ctrl->OnDrawItem(dis);
+        
     }
 
     virtual void OnInit()

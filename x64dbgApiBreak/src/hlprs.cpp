@@ -4,7 +4,7 @@
 void HlpDebugPrint(const char *format, ...)
 {
     va_list vl;
-    char content[512] = { 0 };
+    char content[0x500] = { 0 };
 
     va_start(vl, format);
     _vsnprintf(content, sizeof(content), format, vl);

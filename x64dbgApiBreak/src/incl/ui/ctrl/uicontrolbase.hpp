@@ -6,11 +6,19 @@
 
 class UiControlBase
 {
+private:
+    struct OwnerStringDrawInfo
+    {
+        char value[512];
+        COLORREF foreColor;
+        POINT xy;
+    };
 protected:
     UIOBJECT *ui;
     DWORD ctrlId;
     HWND ctrlHwnd;
     UiWrapper *parent;
+    OwnerStringDrawInfo ownerStringDrawData;
 
     DWORD MyId() const
     {
@@ -77,6 +85,15 @@ public:
     LONG SendControlMsg(UINT msg, WPARAM wp, LPARAM lp)
     {
         return (LONG)::SendMessage(this->ctrlHwnd, msg, wp, lp);
+    }
+
+    void EnableOwnerDraw()
+    {
+        LONG style = GetWindowLong(MyHandle(), GWL_STYLE);
+
+        style |= SS_OWNERDRAW;
+
+        SetWindowLong(MyHandle(), GWL_STYLE, style);
     }
 
     void Disable()
@@ -174,6 +191,31 @@ public:
         return SetWindowTextW(MyHandle(), value);
     }
 
+    void DrawStringA(LPCSTR text, INT x, INT y, COLORREF foreColor)
+    {
+        strcpy(ownerStringDrawData.value, text);
+        ownerStringDrawData.xy.x = x;
+        ownerStringDrawData.xy.y = y;
+        ownerStringDrawData.foreColor = foreColor;
+        InvalidateRect(MyHandle(), NULL, TRUE);
+    }
+
+    void DrawStringFormatA(INT x, INT y, COLORREF foreColor, LPCSTR format, ...)
+    {
+        va_list va;
+        LPSTR buffer;
+        va_start(va, format);
+        
+        if (!HlpPrintFormatBufferExA(&buffer, format, va))
+            return;
+
+        DrawStringA(buffer, x, y, foreColor);
+
+        FREESTRING(buffer);
+
+        va_end(va);
+    }
+
 
     virtual void OnInitControl()
     {
@@ -183,6 +225,16 @@ public:
     virtual void OnCommand(WPARAM wp)
     {
 
+    }
+
+    virtual void OnDrawItem(LPDRAWITEMSTRUCT dis)
+    {
+        UiDrawStringA(
+            dis->hDC, 
+            ownerStringDrawData.value, 
+            ownerStringDrawData.xy.x,
+            ownerStringDrawData.xy.y, 
+            ownerStringDrawData.foreColor, 0);
     }
 
 

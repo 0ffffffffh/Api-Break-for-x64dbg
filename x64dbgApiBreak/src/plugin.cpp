@@ -69,6 +69,7 @@ void AbpParseScripts()
     char *tokCtx;
     char *scripts = NULL;
     char *line;
+    LPSTR errStr;
 
     if (!AbGetSettings()->mainScripts)
         return;
@@ -88,6 +89,12 @@ void AbpParseScripts()
         DBGPRINT("Parsing '%s'", line);
         SmmParseFromFileA(line, &AbParsedTypeCount);
         line = strtok_s(NULL, "\r\n;", &tokCtx);
+    }
+
+    if (SmmHasParseError(&errStr))
+    {
+        MessageBoxA(NULL, errStr, "x64dbg Api Break - script parse error", MB_ICONERROR);
+        FREESTRING(errStr);
     }
 
     DBGPRINT("%d type(s) parsed.", AbParsedTypeCount);
@@ -334,11 +341,12 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 
     pbi = AbpLookupBreakpoint(info->breakpoint->addr);
 
-    bpcb = pbi->cbctx;
-
+    
     if (pbi != NULL)
     {
         DBGPRINT("Special breakpoint detected.");
+
+        bpcb = pbi->cbctx;
 
         pbi->hitCount++;
 
@@ -357,6 +365,8 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 
         if (AbGetSettings()->mapCallContext)
         {
+            DBGBREAK();
+
             if (SmmGetFunctionSignature2(bpcb->afi, &fnSign))
             {
                 DBGPRINT("Function mapping signature found. Mapping...");

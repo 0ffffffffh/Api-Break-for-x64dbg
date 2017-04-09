@@ -67,12 +67,15 @@ BOOL DmaReadTypeAlignedSequence(PDMA dma, ULONG index, ULONG count, void *destMe
 
 BOOL DmaTakeMemoryOwnership(PDMA dma, void **nativeMem);
 
-BOOL DmaPrepareForDirectWrite(PDMA dma, ULONG writeOffset, ARCHWIDE writeSize);
+BOOL DmaPrepareForDirectWrite(PDMA dma, ULONG writeOffset, ARCHWIDE writeSize, void **nativeMem);
+
+void DmaGetAdapterInfo(PDMA dma, ARCHWIDE *writtenSize, ARCHWIDE *totalSize);
 
 BOOL DmaPrepareForRead(PDMA dma, void **nativeMem);
 
-void DmaDestroyAdapter(PDMA dma);
+BOOL DmaSink(PDMA dma);
 
+void DmaDestroyAdapter(PDMA dma);
 
 BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, BOOL ipOnStack, PPASSED_PARAMETER_CONTEXT *paramInfo);
 

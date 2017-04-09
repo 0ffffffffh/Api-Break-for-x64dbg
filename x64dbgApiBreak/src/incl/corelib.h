@@ -14,29 +14,7 @@
 #pragma comment(lib, "pluginsdk/TitanEngine/TitanEngine_x86.lib")
 #endif
 
-static bool AbMemReadGuaranteed(duint va, void *dest, duint size)
-{
-    bool success = false;
-    int limit = 1000 / 20;
-
-    if (!AbHasDebuggingProcess())
-        return false;
-
-    //Another ugly hack here 
-    //x64dbg has a bug https://github.com/x64dbg/x64dbg/issues/1475
-    while (limit-- != 0)
-    {
-        if (!DbgMemRead(va, dest, size))
-            Sleep(20);
-        else
-        {
-            success = true;
-            break;
-        }
-    }
-
-    return success;
-}
+bool AbMemReadGuaranteed(duint va, void *dest, duint size);
 
 void *AbMemoryAlloc(int size);
 void *AbMemoryRealloc(void *memPtr, int newSize);

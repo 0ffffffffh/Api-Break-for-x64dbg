@@ -286,7 +286,7 @@ BOOL SmmpPopWorkdir(BOOL *isLocal)
 void SmmpRaiseParseError(LONG err)
 {
     const LONG totalErrString = sizeof(FAIL_MESSAGES) / sizeof(char *);
-
+    
     if (err >= 0 && err <= totalErrString)
     {
         if (SmmpParseErrorContent)
@@ -789,6 +789,9 @@ WORD SmmpParseTypeFields(PSLISTNODE *beginNode, PSTRUCTINFO typeInfo)
 
     while (node != NULL)
     {
+        if (IsCurlyBrckClose(node))
+            break;
+
         if (SmmpParseTypeField(&node, &field))
         {
             SmmpAddSList(typeInfo->fields, field);
@@ -1726,6 +1729,24 @@ BOOL SmmParseFromFileA(LPCSTR fileName, WORD *typeCount)
     FREESTRING(fileNameW);
 
     return result;
+}
+
+BOOL SmmHasParseError(LPSTR *errorString)
+{
+    ARCHWIDE written = 0;
+
+    if (!SmmpParseErrorContent)
+        return FALSE;
+
+    DmaGetAdapterInfo(SmmpParseErrorContent, &written, NULL);
+
+    if (written > 0)
+    {
+        DmaTakeMemoryOwnership(SmmpParseErrorContent, (void **)errorString);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 VOID SmmReleaseResources()

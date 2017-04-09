@@ -66,6 +66,8 @@ UIOBJECT *UiCreateDialog(
     WINDOWCREATIONINFO *wci,
     BOOL *wasSucceeded);
 
+BOOL UiDrawStringA(HDC dc, LPCSTR text, FLOAT x, FLOAT y, COLORREF forecolor, COLORREF backcolor);
+
 void UiReleaseObject(UIOBJECT *ui);
 
 BOOL UiDestroyDialog(UIOBJECT *ui);

@@ -190,6 +190,7 @@
     <ClInclude Include="src\incl\ui\ui.h" />
     <ClInclude Include="src\incl\ui\uiwrapper.hpp" />
     <ClInclude Include="src\incl\util.h" />
+    <ClInclude Include="src\incl\qpc.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\apibreak.cpp" />

@@ -28,6 +28,8 @@ BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount);
 
 BOOL SmmParseFromFileA(LPCSTR fileName, WORD *typeCount);
 
+BOOL SmmHasParseError(LPSTR *errorString);
+
 VOID SmmReleaseResources();
 
 #endif // !__STRUCTMEMMAP_H__

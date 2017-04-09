@@ -344,7 +344,7 @@ bool AbCmdExecFormat(const char *format, ...)
 
     if (HlpPrintFormatBufferExA(&buffer, format, va) > 0)
     {
-        success = DbgCmdExec(buffer);
+        success = DbgCmdExecDirect(buffer);
 
         FREESTRING(buffer);
     }
@@ -575,13 +575,19 @@ void AbEnumApiFunctionNames(APIMODULE_ENUM_PROC enumProc, const char *moduleName
 bool AbpReturnToCaller(duint callerIp, duint csp)
 {
     RegisterEnum cspReg, cipReg;
-
+    
 #ifdef _WIN64
     cspReg = RegisterEnum::RSP;
     cipReg = RegisterEnum::RIP;
 #else
     cspReg = RegisterEnum::ESP;
     cipReg = RegisterEnum::EIP;
+#endif
+
+#if _DEBUG
+    DBGPRINT("Old CIP: %p, New CIP: %p", Get(cipReg), callerIp);
+    DBGPRINT("Current CSP: %p, Ctx CSP: %p, New CSP: %p", Get(cspReg), csp, csp + sizeof(duint));
+
 #endif
 
     //pop stack
@@ -597,10 +603,13 @@ void AbpCallback0(__BpCallbackContext *bpx)
     return;
 }
 
+#include <qpc.hpp>
+
 void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
 {
-    REGDUMP regContext;
     duint callerIp;
+
+    QPerf perf;
 
     switch (bpx->bp->type)
     {
@@ -612,19 +621,34 @@ void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
         return;
     }
 
-    callerIp = UtlGetCallerAddress(&regContext);
+    DBGPRINT("Backtracing to the caller");
+
+    perf.Begin();
+
+    callerIp = UtlGetCallerAddress(&bpx->regContext);
+
+    perf.TimeFor("UtlGetCallerAddress");
 
     if (callerIp > 0)
     {   
-        if (AbpReturnToCaller(callerIp, regContext.regcontext.csp))
+        if (AbpReturnToCaller(callerIp, bpx->regContext.regcontext.csp))
         {
             bpx->regContext.regcontext.csp += sizeof(duint);
             bpx->regContext.regcontext.cip = callerIp;
         }
+        else
+            DBGPRINT("Cant return to caller");
 
-        AbCmdExecFormat("disasm %p", callerIp);
+        perf.TimeFor("AbpReturnToCaller");
+
+        GuiDisasmAt(callerIp, callerIp);
+        GuiStackDumpAt(bpx->regContext.regcontext.csp, bpx->regContext.regcontext.csp);
+
+        perf.TimeFor("AbCmdExecFormat");
     }
 
+
+    perf.Dump();
 }
 
 bool AbSetAPIBreakpointOnCallers(const char *module, const char *apiFunction)

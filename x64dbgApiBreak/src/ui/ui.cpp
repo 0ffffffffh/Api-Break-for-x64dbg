@@ -433,6 +433,77 @@ UIOBJECT *UiCreateDialog(
 	return uiObject;
 }
 
+void UipGetWinVer(LPOSVERSIONINFOA lposv)
+{
+    //Microsoft has deprecated the version getting API's a while ago.
+    //And introduced some stupid version helper APIs
+    //like IsWindowsXPOrGreater. I dont need that shit.
+    //We are still need the GetVersionXXX API's for backward
+    //compability.
+
+    lposv->dwOSVersionInfoSize = sizeof(OSVERSIONINFOA);
+    
+    //Shit I'm bored of typedef declaration for the API procs.
+    //Thats why I did it.
+    ((BOOL (WINAPI *)(LPOSVERSIONINFOA))
+        GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetVersionExA"))(lposv);
+
+}
+
+BOOL UipIsServer2003XpOrEarlier()
+{
+    OSVERSIONINFOA osw;
+    UipGetWinVer(&osw);
+
+    //No needed to check minor version. 
+    return osw.dwMajorVersion <= 5;
+}
+
+BOOL UiDrawStringA(HDC dc, LPCSTR text, FLOAT x, FLOAT y, COLORREF forecolor, COLORREF backcolor)
+{
+    RECT rc;
+    SIZE textSize;
+    HFONT font;
+    HGDIOBJ obj;
+    LOGFONTA logFont;
+    NONCLIENTMETRICSA ncm;
+    
+    if (!dc)
+        return FALSE;
+
+    ncm.cbSize = sizeof(NONCLIENTMETRICSA);
+
+    //https://msdn.microsoft.com/en-us/library/windows/desktop/ff729175.aspx
+    //See remarks section
+    if (UipIsServer2003XpOrEarlier())
+        ncm.cbSize -= sizeof(ncm.iPaddedBorderWidth);
+
+    SystemParametersInfoA(SPI_GETNONCLIENTMETRICS, ncm.cbSize, &ncm, 0);
+    
+    memcpy(&logFont, &ncm.lfMessageFont, sizeof(LOGFONTA));
+
+    logFont.lfWeight = FW_BOLD;
+
+    font = CreateFontIndirectA(&logFont);
+
+    SetTextColor(dc, forecolor);
+    obj = SelectObject(dc, font);
+
+    GetTextExtentPoint32A(dc, text, strlen(text), &textSize);
+
+    rc.left = x;
+    rc.top = y;
+    rc.right = textSize.cx;
+    rc.bottom = textSize.cy;
+
+    DrawTextA(dc, text, -1, &rc , DT_SINGLELINE | DT_LEFT);
+
+    SelectObject(dc, obj);
+
+    DeleteObject(font);
+
+    return TRUE;
+}
 
 void UiReleaseObject(UIOBJECT *ui)
 {

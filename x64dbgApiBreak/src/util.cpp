@@ -345,6 +345,19 @@ BOOL DmaPrepareForDirectWrite(PDMA dma, ULONG writeOffset, ARCHWIDE writeSize, v
     return FALSE;
 }
 
+void DmaGetAdapterInfo(PDMA dma, ARCHWIDE *writtenSize, ARCHWIDE *totalSize)
+{
+    if (!dma)
+        return;
+
+    if (writtenSize)
+        *writtenSize = dma->writeBoundary;
+
+    if (totalSize)
+        *totalSize = dma->totalSize;
+
+}
+
 void DmaEndDirectWrite(PDMA dma)
 {
     NOTIMPLEMENTED();
@@ -358,6 +371,27 @@ BOOL DmaPrepareForRead(PDMA dma, void **nativeMem)
         *nativeMem = dma->memory;
 
     return success;
+}
+
+BOOL DmaSink(PDMA dma)
+{
+    if (!dma)
+        return FALSE;
+
+    if (dma->ownershipTaken)
+        return FALSE;
+
+    if (dma->oldProtect != 0)
+    {
+        VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, dma->oldProtect, &dma->oldProtect);
+        dma->oldProtect = 0;
+    }
+
+    memset(dma->memory, 0, dma->writeBoundary);
+
+    dma->writeBoundary = 0;
+
+    return TRUE;
 }
 
 void DmaDestroyAdapter(PDMA dma)
@@ -378,6 +412,7 @@ void DmaDestroyAdapter(PDMA dma)
 }
 
 //UTILITY FUNCS
+
 
 BOOL UtlExtractPassedParameters(USHORT paramCount, CALLCONVENTION callConv, REGDUMP *regdump, BOOL ipOnStack, PPASSED_PARAMETER_CONTEXT *paramInfo)
 {
@@ -438,6 +473,8 @@ duint UtlGetCallerAddress(REGDUMP *regdump)
 
         return callerIp;
     }
+
+    DBGPRINT("Cant find caller ip");
 
     return 0;
 }
