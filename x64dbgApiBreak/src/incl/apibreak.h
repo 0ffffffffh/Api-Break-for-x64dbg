@@ -68,6 +68,8 @@ typedef void(*APIMODULE_ENUM_PROC)(LPCSTR,void *);
 
 typedef void(*AB_BREAKPOINT_CALLBACK)(struct __BpCallbackContext *);
 
+struct __BREAKPOINT_INFO;
+
 typedef struct __BpCallbackContext
 {
     duint                       bpAddr;
@@ -75,17 +77,22 @@ typedef struct __BpCallbackContext
     REGDUMP                     regContext;
     AB_BREAKPOINT_CALLBACK      callback;
     ApiFunctionInfo             *afi;
-    BOOL                        backTrack;
+    struct __BREAKPOINT_INFO    *ownerBreakpoint;
     void *                      user;
 }BpCallbackContext;
 
-typedef struct
+typedef struct __BREAKPOINT_INFO
 {
     duint                   addr;
     duint                   hitCount;
     DWORD                   options;
+    DWORD                   status;
     BpCallbackContext*      cbctx;
 }*PBREAKPOINT_INFO, BREAKPOINT_INFO;
+
+#define BPS_NONE                0x00000000
+#define BPS_EXECUTING_HANDLER   0x00000001
+#define BPS_EXECUTING_CALLBACK  0x00000002
 
 #define BPO_NONE                0
 #define BPO_BACKTRACK           1

@@ -12,12 +12,21 @@ typedef unsigned char uchar;
 
 #define DBG_LIBEXPORT extern "C" __declspec(dllexport)
 
-#define BIGERROR(msg) DBGPRINT(msg); \
-                     __debugbreak()
-
+#if _DEBUG
 #define DBGPRINT(s,...) HlpDebugPrint("ApiBreak: " s "\n",##__VA_ARGS__)
 #define DBGPRINT2(s,...) HlpDebugPrint("ApiBreak: %s\n",##__VA_ARGS__)
 #define _DBGPRINT(s,...) HlpDebugPrint(s,##__VA_ARGS__)
+#else
+#define DBGPRINT(s,...) 
+#define DBGPRINT2(s,...)
+#define _DBGPRINT(s,...)
+
+#endif
+
+#define RAISEGLOBALERROR(errString) AbRaiseSystemError(errString, 0)
+
+#define BIGERROR(msg) DBGPRINT(msg); \
+                     __debugbreak()
 
 
 #define NOTIMPLEMENTED() HlpDebugPrint(__FUNCTION__ " not implemented yet")

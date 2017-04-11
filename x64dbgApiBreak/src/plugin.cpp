@@ -154,6 +154,28 @@ void AbReleaseAllSystemResources(bool isInShutdown)
     }
 }
 
+BOOL AbRaiseSystemError(const char *errorDesc, int errCode)
+{
+    LPSTR msg;
+    BOOL dbgBreak;
+
+    HlpPrintFormatBufferA(&msg,
+        "An error occurred;\r\n\r\n%s\r\nDo you want to break into debugger?",
+        errorDesc);
+
+    dbgBreak = MessageBoxA(NULL, msg, "Error", MB_ICONERROR | MB_YESNO) == IDYES;
+
+    FREESTRING(msg);
+
+    if (dbgBreak)
+    {
+        __debugbreak();
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 void __AbpInitMenu()
 {
     _plugin_menuaddentry(AbMenuHandle, MN_SHOWMAINFORM, "set an API breakpoint");
@@ -276,6 +298,17 @@ void AbpGhostBreakpointHandler(BpCallbackContext *bpx)
 {
 }
 
+#include <dlgs/ApiCallMapForm.hpp>
+
+void AbpWaitUntilHandlerDone(PBREAKPOINT_INFO pbi)
+{
+    while (pbi->status & BPS_EXECUTING_HANDLER)
+        _mm_pause();
+
+    //Give a bit time to the handler to make sure it returned
+    SleepEx(10, FALSE);
+}
+
 LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
 {
     PFNSIGN fnSign;
@@ -284,6 +317,7 @@ LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
     BASIC_INSTRUCTION_INFO instr;
     duint addr;
     char msgBuf[512];
+    LPSTR mapResult;
 
     char *nativeData;
 
@@ -301,28 +335,34 @@ LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
         ppc = (PPASSED_PARAMETER_CONTEXT)bpcb->user;
 
         //Is it alreadly backtraced for caller?
-        if (!bpcb->backTrack)
+        if (!(bpcb->ownerBreakpoint->options & BPO_BACKTRACK))
         {
             //if not, we must do that.
             addr = UtlGetCallerAddress(&bpcb->regContext);
+        }
+        else
+            addr = bpcb->regContext.regcontext.cip;
 
-            DbgDisasmFastAt(addr, &instr);
+        DbgDisasmFastAt(addr, &instr);
 
-            addr += instr.size;
+        addr += instr.size;
 
-            if (!AbSetInstructionBreakpoint(addr, AbpGhostBreakpointHandler, bpcb,true))
-            {
-                DBGPRINT("Bpx set failed");
-                return EXIT_FAILURE;
-            }
+        if (!AbSetInstructionBreakpoint(addr, AbpGhostBreakpointHandler, bpcb, true))
+        {
+            DBGPRINT("Bpx set failed");
+            return EXIT_FAILURE;
         }
 
         AbDebuggerRun();
         AbDebuggerWaitUntilPaused();
+        AbpWaitUntilHandlerDone(bpcb->ownerBreakpoint);
 
         SmmGetFunctionSignature2(bpcb->afi, &fnSign);
 
-        SmmMapFunctionCall(ppc, fnSign, bpcb->afi);
+        SmmMapFunctionCall(ppc, fnSign, bpcb->afi, &mapResult);
+
+        ApiCallMapForm *acmf = new ApiCallMapForm(mapResult);
+        acmf->ShowDialog();
 
     }
 
@@ -345,6 +385,7 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
     if (pbi != NULL)
     {
         DBGPRINT("Special breakpoint detected.");
+        pbi->status |= BPS_EXECUTING_HANDLER;
 
         bpcb = pbi->cbctx;
 
@@ -360,13 +401,15 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
             bpcb->bp = info->breakpoint;
 
             if (bpcb->callback != NULL)
+            {
+                pbi->status |= BPS_EXECUTING_CALLBACK;
                 bpcb->callback(bpcb);
+                pbi->status &= ~BPS_EXECUTING_CALLBACK;
+            }
         }
 
         if (AbGetSettings()->mapCallContext)
         {
-            DBGBREAK();
-
             if (SmmGetFunctionSignature2(bpcb->afi, &fnSign))
             {
                 DBGPRINT("Function mapping signature found. Mapping...");
@@ -382,12 +425,16 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
                     QueueUserWorkItem((LPTHREAD_START_ROUTINE)AbpShowOutputArgumentQuestion, bpcb, WT_EXECUTELONGFUNCTION);
                 }
                 else
-                    SmmMapFunctionCall(ppc, fnSign, bpcb->afi);
+                    SmmMapFunctionCall(ppc, fnSign, bpcb->afi,NULL); //TODO: URGENT: FIX PARAMETER
             }
         }
 
         if (pbi->options & BPO_SINGLESHOT)
             AbDeleteBreakpoint(pbi->addr);
+
+
+        pbi->status &= ~BPS_EXECUTING_HANDLER;
+
     }
     else
     {

@@ -1183,7 +1183,7 @@ BOOL SmmpMapField(PTYPEINFOFIELD ptif, PDMA dma, BYTE *mem,SHORT lastDepth)
     return SmmpMapForPrimitiveType(ptif->type.primitiveType, dma, mem, lastDepth, ptif);
 }
 
-#define PRINT_DEPTH_TABS(buf,depth) for (int i=0;i<(depth);i++) strcat(buf,"\t")
+#define PRINT_DEPTH_TABS(dma,depth) for (int i=0;i<(depth);i++) DmaStringWriteA(dma, "\t")
 
 BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHORT depth)
 {
@@ -1196,11 +1196,10 @@ BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHO
     if (size < typeInfo->structSize)
         return FALSE;
 
+    DmaStringWriteA(dma, "(Struct of %s) = \n", typeInfo->name);
 
-    for (int i=0;i<depth;i++)
-        DmaStringWriteA(dma, "\t");
-
-    DmaStringWriteA(dma, "%s = [\n", typeInfo->name);
+    PRINT_DEPTH_TABS(dma, depth);
+    DmaStringWriteA(dma, "[\n");
 
     
     mem = (BYTE *)memory;
@@ -1210,8 +1209,7 @@ BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHO
         ptif = RECORD_OF(node, PTYPEINFOFIELD);
         memset(buf, 0, sizeof(buf));
 
-        for (int i = 0;i < depth + 1;i++)
-            DmaStringWriteA(dma, "\t");
+        PRINT_DEPTH_TABS(dma, depth + 1);
 
         DmaStringWriteA(dma, "%s = ", ptif->fieldName);
 
@@ -1258,13 +1256,14 @@ BOOL SmmpTypeIsPrimitive(LPVOID typeData, BOOL *isPrimitive)
     return FALSE;
 }
 
-BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, ApiFunctionInfo *afi)
+BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, ApiFunctionInfo *afi, LPSTR *mapResult)
 {
     PARGINFO argInfo;
     BOOL isPrimitive;
     PDMA dmaContent;
     BYTE *mem;
     DWORD typeSize;
+    PGENERIC_DATATYPE_INFO pdi;
 
     char *totalBuf;
 
@@ -1281,11 +1280,14 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
     {
         argInfo = &fnSign->args[i];
 
-        DmaStringWriteA(dmaContent, "\tArg: %s = ", argInfo->name);
-
         if (!SmmpTypeIsPrimitive(argInfo->typeInfo.holder, &isPrimitive))
             return FALSE;
 
+        pdi = (PGENERIC_DATATYPE_INFO)argInfo->typeInfo.holder;
+
+        DmaStringWriteA(dmaContent, "\tArg#%d (Name: %s, Type: %s) = ", i+1, argInfo->name,pdi->typeName);
+
+        
         if (argInfo->isPointer)
         {
             typeSize = isPrimitive ? argInfo->typeInfo.primitiveInfo->size : argInfo->typeInfo.structInfo->structSize;
@@ -1310,14 +1312,7 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
 
     DmaStringWriteA(dmaContent, ");\n\n");
 
-    if (!DmaPrepareForRead(dmaContent, (void **)&totalBuf))
-    {
-        DBGPRINT("Prepare for read failed");
-        DmaDestroyAdapter(dmaContent);
-        return FALSE;
-    }
-
-    _DBGPRINT(totalBuf);
+    DmaTakeMemoryOwnership(dmaContent, (void **)mapResult);
 
     DmaDestroyAdapter(dmaContent);
 

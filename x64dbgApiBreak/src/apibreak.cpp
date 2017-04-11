@@ -68,6 +68,8 @@ bool AbpRegisterBreakpoint(duint addr, DWORD options, BpCallbackContext *cbctx)
     pbi->hitCount = 0;
     pbi->cbctx = cbctx;
 
+    cbctx->ownerBreakpoint = pbi;
+
     AbpBreakpointList.insert({ addr,pbi });
 
     return true;
@@ -758,16 +760,15 @@ bool AbDeleteBreakpoint(duint addr)
     if (!pbi)
         return false;
 
-    deleteOk = DeleteBreakpoint(addr);
+    //Single shoot breakpoints will be deleted automatically after hit
+    if (!(pbi->options & BPO_SINGLESHOT))
+        deleteOk = DeleteBreakpoint(addr);
+    else
+        deleteOk = true; //yep its already deleted
 
     if (deleteOk)
     {
         AbpDeregisterBreakpoint(addr);
-
-        if (pbi->cbctx != NULL)
-            FREEOBJECT(pbi->cbctx);
-
-        FREEOBJECT(pbi);
     }
 
     return deleteOk;
