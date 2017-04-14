@@ -31,7 +31,7 @@ void AbpReleaseBreakpointResources()
         it = AbpBreakpointList.begin();
 
         if (it->second->cbctx != NULL)
-            FREEOBJECT(it->second);
+            FREEOBJECT(it->second->cbctx);
 
         FREEOBJECT(it->second);
         

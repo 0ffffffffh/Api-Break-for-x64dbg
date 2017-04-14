@@ -201,6 +201,29 @@ PDMA    SmmpParseErrorContent = NULL;
 
 WORKDIR_STACK SmmpWorkDirStack;
 
+#include <rtf.h>
+
+#define RTFC_DEFAULT        0
+#define RTFC_DARKRED        1
+#define RTFC_DARKBLUE       2
+#define RTFC_LIGHTBLUE      3
+#define RTFC_LIGHTGREEN     4
+
+#define RTFF_DEFAULT        0
+
+
+void SmmpInitializeRtf(Rtf * data)
+{
+    
+    data->RegisterColor(RGB(185, 0, 0));
+    data->RegisterColor(RGB(0, 0, 139));
+    data->RegisterColor(RGB(0, 77, 187));
+    data->RegisterColor(RGB(0, 176, 80));
+
+    data->RegisterFont("Segoe UI", 0);
+}
+
+
 const char *FAIL_MESSAGES[] =
 {
     "Memory alloc error",
@@ -1084,9 +1107,9 @@ void SmmpDumpType(PSTRUCTINFO type)
     }
 }
 
-BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHORT depth);
+BOOL SmmpMapMemory(void *memory, Rtf *rtf, ULONG size, PSTRUCTINFO typeInfo, SHORT depth);
 
-BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, PDMA dma, BYTE *mem, SHORT lastDepth, OPTIONAL PTYPEINFOFIELD ptif)
+BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, Rtf *rtf, BYTE *mem, SHORT lastDepth, OPTIONAL PTYPEINFOFIELD ptif)
 {
     PPRIMITIVETYPEINFO pmti;
     BYTE *subMem;
@@ -1141,7 +1164,7 @@ BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, PDMA dma, BYTE *mem, SHORT 
             for (int i = 0;i < ptif->arrSize;i++)
             {
                 pti->method(buffer, mem,true);
-                DmaStringWriteA(dma, "[%d] = %s, ", buffer);
+                //DmaStringWriteA(dma, "[%d] = %s, ",i,buffer);
                 mem += ptif->arrSize;
             }
 
@@ -1161,31 +1184,31 @@ oneWayExit:
 
     if (result)
     {
-        DmaStringWriteA(dma, buffer);
+        rtf->Color(RTFC_DEFAULT)->FormatText(buffer);
+        //DmaStringWriteA(dma, buffer);
     }
 
     return result;
 }
 
-BOOL SmmpMapForUserType(PSTRUCTINFO sti, PDMA dma, BYTE *mem, SHORT lastDepth)
+BOOL SmmpMapForUserType(PSTRUCTINFO sti, Rtf *rtf, BYTE *mem, SHORT lastDepth)
 {
-    return SmmpMapMemory(mem, dma, sti->structSize, sti, lastDepth + 1);
+    return SmmpMapMemory(mem, rtf, sti->structSize, sti, lastDepth + 1);
 }
 
-BOOL SmmpMapField(PTYPEINFOFIELD ptif, PDMA dma, BYTE *mem,SHORT lastDepth)
+BOOL SmmpMapField(PTYPEINFOFIELD ptif, Rtf* rtf, BYTE *mem,SHORT lastDepth)
 {
     PPRIMITIVETYPEINFO pmti = NULL;
     BYTE *memArr = NULL;
 
     if (ptif->isStruct)
-        return SmmpMapForUserType(ptif->type.structType, dma, mem, lastDepth);
+        return SmmpMapForUserType(ptif->type.structType, rtf, mem, lastDepth);
 
-    return SmmpMapForPrimitiveType(ptif->type.primitiveType, dma, mem, lastDepth, ptif);
+    return SmmpMapForPrimitiveType(ptif->type.primitiveType, rtf, mem, lastDepth, ptif);
 }
 
-#define PRINT_DEPTH_TABS(dma,depth) for (int i=0;i<(depth);i++) DmaStringWriteA(dma, "\t")
 
-BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHORT depth)
+BOOL SmmpMapMemory(void *memory, Rtf *rtf, ULONG size, PSTRUCTINFO typeInfo, SHORT depth)
 {
     BYTE *mem;
     PTYPEINFOFIELD ptif = NULL;
@@ -1196,10 +1219,9 @@ BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHO
     if (size < typeInfo->structSize)
         return FALSE;
 
-    DmaStringWriteA(dma, "(Struct of %s) = \n", typeInfo->name);
+    rtf->FormatText("(Struct of %s) = ", typeInfo->name)->NewLine(1);
 
-    PRINT_DEPTH_TABS(dma, depth);
-    DmaStringWriteA(dma, "[\n");
+    rtf->NewTab(depth)->FormatText("[")->NewLine(1);
 
     
     mem = (BYTE *)memory;
@@ -1209,14 +1231,12 @@ BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHO
         ptif = RECORD_OF(node, PTYPEINFOFIELD);
         memset(buf, 0, sizeof(buf));
 
-        PRINT_DEPTH_TABS(dma, depth + 1);
-
-        DmaStringWriteA(dma, "%s = ", ptif->fieldName);
-
-        if (!SmmpMapField(ptif, dma, mem,depth))
+        rtf->Style(RTFS_TAB, depth + 1)->FormatText("%s = ", ptif->fieldName);
+        
+        if (!SmmpMapField(ptif, rtf, mem,depth))
             return FALSE;
 
-        DmaStringWriteA(dma, "\n");
+        rtf->Style(RTFS_NEWLINE);
 
         typeSize = ptif->isStruct ? ptif->type.structType->structSize : ptif->type.primitiveType->size;
 
@@ -1230,10 +1250,7 @@ BOOL SmmpMapMemory(void *memory, PDMA dma, ULONG size, PSTRUCTINFO typeInfo, SHO
 
     }
 
-    for (int i = 0;i<depth;i++)
-        DmaStringWriteA(dma, "\t");
-
-    DmaStringWriteA(dma, "]\n");
+    rtf->NewTab(depth)->FormatText("]")->NewLine(1);
 
     return TRUE;
 }
@@ -1256,25 +1273,34 @@ BOOL SmmpTypeIsPrimitive(LPVOID typeData, BOOL *isPrimitive)
     return FALSE;
 }
 
+
 BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, ApiFunctionInfo *afi, LPSTR *mapResult)
 {
     PARGINFO argInfo;
     BOOL isPrimitive;
-    PDMA dmaContent;
     BYTE *mem;
     DWORD typeSize;
     PGENERIC_DATATYPE_INFO pdi;
 
+    Rtf *rtf;
+
     char *totalBuf;
 
-    if (!DmaCreateAdapter(sizeof(char), 0x1000, &dmaContent))
-        return FALSE;
+    rtf = new Rtf();
 
-    
+    SmmpInitializeRtf(rtf);
+
     if (_stricmp(fnSign->module, afi->ownerModule->name) || _stricmp(fnSign->name, afi->name))
         return FALSE;
 
-    DmaStringWriteA(dmaContent, "Map for %s:%s (\n", fnSign->module, fnSign->name);
+    rtf->Style(RTFS_BOLD)->Font(RTFF_DEFAULT)->FontSize(22)
+        ->FormatText("Map for ")->Color(RTFC_DARKBLUE)
+        ->FormatText("%s", fnSign->module)->Color(RTFC_DEFAULT)
+        ->FormatText("!")->Color(RTFC_DARKRED)
+        ->FormatText("%s", fnSign->name)->Color(RTFC_DEFAULT)
+        ->FormatText("(")->NewLine(1);
+
+    //DmaStringWriteA(dmaContent, "Map for %s:%s (\n", fnSign->module, fnSign->name);
 
     for (int i = 0;i < fnSign->argCount;i++)
     {
@@ -1285,7 +1311,15 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
 
         pdi = (PGENERIC_DATATYPE_INFO)argInfo->typeInfo.holder;
 
-        DmaStringWriteA(dmaContent, "\tArg#%d (Name: %s, Type: %s) = ", i+1, argInfo->name,pdi->typeName);
+
+        rtf->Style(RTFS_TAB, 1)->Color(RTFC_DEFAULT)
+            ->FormatText("Arg#%d (", i + 1)->Color(RTFC_LIGHTGREEN)
+            ->FormatText("Name")->Color(RTFC_DARKRED)
+            ->FormatText(": %s, ", argInfo->name)
+            ->Color(RTFC_LIGHTGREEN)->FormatText("Type")
+            ->Color(RTFC_DEFAULT)->FormatText(": %s) = ", pdi->typeName);
+
+        //DmaStringWriteA(dmaContent, "\tArg#%d (Name: %s, Type: %s) = ", i+1, argInfo->name,pdi->typeName);
 
         
         if (argInfo->isPointer)
@@ -1300,21 +1334,25 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
             mem = (BYTE *)passedParams->paramList[i];
         
         if (isPrimitive)
-            SmmpMapForPrimitiveType((PPRIMITIVETYPEINFO)argInfo->typeInfo.holder, dmaContent, mem, 0, NULL);
+            SmmpMapForPrimitiveType((PPRIMITIVETYPEINFO)argInfo->typeInfo.holder, rtf, mem, 0, NULL);
         else
         {
             //I need a special formatting for function map of the user types!!
-            SmmpMapForUserType((PSTRUCTINFO)argInfo->typeInfo.holder, dmaContent, mem, 0);
+            SmmpMapForUserType((PSTRUCTINFO)argInfo->typeInfo.holder, rtf, mem, 0);
         }
 
-        DmaStringWriteA(dmaContent, "\n");
+        rtf->Style(RTFS_NEWLINE);
+
+        //DmaStringWriteA(dmaContent, "\n");
     }
 
-    DmaStringWriteA(dmaContent, ");\n\n");
+    rtf->FormatText(");")->NewLine(2);
 
-    DmaTakeMemoryOwnership(dmaContent, (void **)mapResult);
+    //DmaStringWriteA(dmaContent, ");\n\n");
 
-    DmaDestroyAdapter(dmaContent);
+    *mapResult = rtf->GetRtf();
+
+    delete rtf;
 
     return TRUE;
 }
@@ -1344,23 +1382,22 @@ BOOL SmmMapRemoteMemory(duint memory, ULONG size, const char *typeName)
 
 BOOL SmmMapMemory(void *memory, ULONG size, const char *typeName)
 {
-    PDMA dma;
+    Rtf *rtf;
     BOOL result;
 
-    if (!DmaCreateAdapter(sizeof(char), 0x100, &dma))
-        return FALSE;
+    rtf = new Rtf();
 
     for (PSLISTNODE node = SmmpUserTypeList->head; node != NULL; node = node->next)
     {
         if (!strcmp(RECORD_OF(node, PSTRUCTINFO)->name, typeName))
         {
-            result = SmmpMapMemory(memory, dma, size, RECORD_OF(node, PSTRUCTINFO), 0);
+            result = SmmpMapMemory(memory, rtf, size, RECORD_OF(node, PSTRUCTINFO), 0);
             break;
         }
     }
 
 
-    DmaDestroyAdapter(dma);
+    delete rtf;
 
     return result;
 }

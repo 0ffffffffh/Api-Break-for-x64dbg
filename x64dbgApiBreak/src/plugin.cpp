@@ -194,12 +194,23 @@ DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
     AbSettingsLoad();
     AbiInitDynapi();
 
+
+    LoadLibraryA("Riched20.dll");
+
     return true;
 }
 
 DBG_LIBEXPORT bool plugstop()
 {
+    HMODULE hmod;
+
     AbReleaseAllSystemResources(true);
+
+    hmod = GetModuleHandleA("Riched20.dll");
+
+    if (hmod)
+        FreeLibrary(hmod);
+
     return true;
 }
 

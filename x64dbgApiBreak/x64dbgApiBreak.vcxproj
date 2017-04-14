@@ -183,6 +183,7 @@
     <ClInclude Include="src\incl\dlgs\SettingsForm.hpp" />
     <ClInclude Include="src\incl\hlp.h" />
     <ClInclude Include="src\incl\instparse.h" />
+    <ClInclude Include="src\incl\rtf.h" />
     <ClInclude Include="src\incl\settings.h" />
     <ClInclude Include="src\incl\structmemmap.h" />
     <ClInclude Include="src\incl\ui\ctrl\uicheckbox.hpp" />
@@ -200,6 +201,7 @@
     <ClCompile Include="src\hlprs.cpp" />
     <ClCompile Include="src\instparse.cpp" />
     <ClCompile Include="src\plugin.cpp" />
+    <ClCompile Include="src\rtf.cpp" />
     <ClCompile Include="src\settings.cpp" />
     <ClCompile Include="src\structmemmap.cpp" />
     <ClCompile Include="src\syslib.cpp" />

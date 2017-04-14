@@ -25,6 +25,20 @@ private:
             _this->OnInitInternal();
         }
         break;
+        case WM_WINDOWPOSCHANGED:
+        case WM_ACTIVATE:
+        case WM_SHOWWINDOW:
+        {
+            if (!_this->isFullyLoaded)
+            {
+                if (IsWindowVisible(hwnd))
+                {
+                    _this->isFullyLoaded = true;
+                    _this->OnLoaded();
+                }
+            }
+        }
+        break;
         case WM_COMMAND:
             _this->OnCommand(wp, lp);
             break;
@@ -54,6 +68,7 @@ private:
     UIOBJECT *uiObject;
     WINDOWCREATIONINFO wci;
     LONG dlgId;
+    bool isFullyLoaded;
     bool killingSelf;
 
     unordered_map<HWND, UiControlBase *> childControls;
@@ -105,6 +120,7 @@ private:
     void InitCommon(LONG dlgId, bool center)
     {
         this->killingSelf = false;
+        this->isFullyLoaded = false;
         this->initCompletedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
         this->dlgId = dlgId;
@@ -368,6 +384,11 @@ public:
 
     virtual void OnPaint()
     {
+    }
+
+    virtual void OnLoaded()
+    {
+
     }
 
     virtual void OnCommand(WPARAM wp, LPARAM lp)
