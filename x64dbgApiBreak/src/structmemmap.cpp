@@ -212,13 +212,13 @@ WORKDIR_STACK SmmpWorkDirStack;
 #define RTFF_DEFAULT        0
 
 
-void SmmpInitializeRtf(Rtf * data)
+void SmmpRegisterRtfColorAndFonts(Rtf * data)
 {
-    
-    data->RegisterColor(RGB(185, 0, 0));
-    data->RegisterColor(RGB(0, 0, 139));
-    data->RegisterColor(RGB(0, 77, 187));
-    data->RegisterColor(RGB(0, 176, 80));
+    //Build rtf color table
+    data->RegisterColor(RGB(185, 0, 0)); //DARKRED
+    data->RegisterColor(RGB(0, 0, 139)); //DARKBLUE
+    data->RegisterColor(RGB(0, 77, 187)); //LIGHTBLUE
+    data->RegisterColor(RGB(0, 176, 80)); //LIGHTGREEN
 
     data->RegisterFont("Segoe UI", 0);
 }
@@ -414,7 +414,7 @@ BOOL SmmCreateMapTypeInfo(const char *name, WORD size, BOOL isSigned, CONVERTER_
                                                 sprintf(buf,format,tval); \
                                             } \
 
-
+#pragma warning(disable:4477)
 
 IMPLEMENT_CONVERTER(Int, int, "%d")
 IMPLEMENT_CONVERTER(Uint, unsigned int, "%du")
@@ -430,7 +430,6 @@ IMPLEMENT_CONVERTER(Long64, LONGLONG, "%lld")
 IMPLEMENT_CONVERTER(ULong64, ULONGLONG, "%llu")
 IMPLEMENT_CONVERTER(Pointer, ARCHWIDE, "%p")
 
-#pragma warning(disable:4477)
 
 #ifdef _WIN64
 IMPLEMENT_CONVERTER(ArchHex, ULONGLONG,"%016x")
@@ -1281,14 +1280,11 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
     BYTE *mem;
     DWORD typeSize;
     PGENERIC_DATATYPE_INFO pdi;
-
     Rtf *rtf;
-
-    char *totalBuf;
 
     rtf = new Rtf();
 
-    SmmpInitializeRtf(rtf);
+    SmmpRegisterRtfColorAndFonts(rtf);
 
     if (_stricmp(fnSign->module, afi->ownerModule->name) || _stricmp(fnSign->name, afi->name))
         return FALSE;
@@ -1300,8 +1296,7 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
         ->FormatText("%s", fnSign->name)->Color(RTFC_DEFAULT)
         ->FormatText("(")->NewLine(1);
 
-    //DmaStringWriteA(dmaContent, "Map for %s:%s (\n", fnSign->module, fnSign->name);
-
+    
     for (int i = 0;i < fnSign->argCount;i++)
     {
         argInfo = &fnSign->args[i];
@@ -1318,8 +1313,6 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
             ->FormatText(": %s, ", argInfo->name)
             ->Color(RTFC_LIGHTGREEN)->FormatText("Type")
             ->Color(RTFC_DEFAULT)->FormatText(": %s) = ", pdi->typeName);
-
-        //DmaStringWriteA(dmaContent, "\tArg#%d (Name: %s, Type: %s) = ", i+1, argInfo->name,pdi->typeName);
 
         
         if (argInfo->isPointer)
@@ -1342,13 +1335,10 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
         }
 
         rtf->Style(RTFS_NEWLINE);
-
-        //DmaStringWriteA(dmaContent, "\n");
     }
 
     rtf->FormatText(");")->NewLine(2);
 
-    //DmaStringWriteA(dmaContent, ");\n\n");
 
     *mapResult = rtf->GetRtf();
 

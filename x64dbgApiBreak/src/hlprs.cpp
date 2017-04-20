@@ -168,7 +168,7 @@ bool HlpReplaceStringW(LPWSTR string, ULONG stringMaxSize, LPCWSTR find, LPCWSTR
             goto exit;
     }
 
-    for (int i = 0;i < fCount;i++)
+    for (ULONG i = 0;i < fCount;i++)
     {
         DmaReadTypeAlignedSequence(dma, i, 1, &foundIndex);
         memSrc = (BYTE *)((foundIndex + findLen) * sizeof(WCHAR));

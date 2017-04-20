@@ -382,7 +382,7 @@ bool AbGetDebuggedModuleInfo(ModuleInfo *modInfo)
 bool AbGetDebuggedModulePath(char *pathBuf, int bufLen)
 {
     ModuleInfo mod;
-    duint dn;
+    int dn;
 
     if (!pathBuf)
         return false;
@@ -610,8 +610,7 @@ void AbpCallback0(__BpCallbackContext *bpx)
 void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
 {
     duint callerIp;
-
-    QPerf perf;
+    DECL_QPREF;
 
     switch (bpx->bp->type)
     {
@@ -625,11 +624,11 @@ void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
 
     DBGPRINT("Backtracing to the caller");
 
-    perf.Begin();
+    QPERF_BEGIN();
 
     callerIp = UtlGetCallerAddress(&bpx->regContext);
 
-    perf.TimeFor("UtlGetCallerAddress");
+    QPERF_TIME("UtlGetCallerAddress");
 
     if (callerIp > 0)
     {   
@@ -641,16 +640,16 @@ void AbpBacktrackingBreakpointCallback(__BpCallbackContext *bpx)
         else
             DBGPRINT("Cant return to caller");
 
-        perf.TimeFor("AbpReturnToCaller");
+        QPERF_TIME("AbpReturnToCaller");
 
         GuiDisasmAt(callerIp, callerIp);
         GuiStackDumpAt(bpx->regContext.regcontext.csp, bpx->regContext.regcontext.csp);
 
-        perf.TimeFor("AbCmdExecFormat");
+        QPERF_TIME("AbCmdExecFormat");
     }
 
 
-    perf.Dump();
+    QPERF_DUMP();
 }
 
 bool AbSetAPIBreakpointOnCallers(const char *module, const char *apiFunction)

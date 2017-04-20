@@ -330,8 +330,6 @@ LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
     char msgBuf[512];
     LPSTR mapResult;
 
-    char *nativeData;
-
     BpCallbackContext *bpcb = (BpCallbackContext *)p;
     
     sprintf(msgBuf, "One of the parameters of the %s is marked as out. "

@@ -7,6 +7,19 @@
 
 static LARGE_INTEGER freq = { 0 };
 
+#if _DEBUG
+#define DECL_QPREF QPerf ___qperfvar;
+#define QPERF_BEGIN() ___qperfvar.Begin()
+#define QPERF_TIME(forWhat) ___qperfvar.TimeFor(forWhat)
+#define QPERF_DUMP() ___qperfvar.Dump()
+#else
+
+#define DECL_QPREF
+#define QPERF_BEGIN()
+#define QPERF_TIME(forWhat)
+#define QPERF_DUMP()
+#endif
+
 class QPerf
 {
 private:
@@ -85,7 +98,7 @@ public:
 
         count = written / sizeof(PerfItem);
         
-        for (int i = 0;i < count;i++)
+        for (ULONG i = 0;i < count;i++)
         {
             DmaReadTypeAlignedSequence(list, i, 1, &perf);
 

@@ -21,7 +21,7 @@ const char *regs[17]
     "r15"
 };
 
-#define TOKLIST_SIZE    16
+#define TOKLIST_SIZE    32
 #define TOKLIST_MAX     (TOKLIST_SIZE - 1)
 
 #define RT_IMM          0
@@ -42,7 +42,8 @@ typedef struct
 
 __forceinline void Skiptoken(token_data *td, int skip)
 {
-    if (abs(skip) > td->index)
+    //prevent the possible overflow if skip delta is negative (to the back)
+    if ((duint)abs(skip) > td->index)
         return;
 
     td->index += skip;

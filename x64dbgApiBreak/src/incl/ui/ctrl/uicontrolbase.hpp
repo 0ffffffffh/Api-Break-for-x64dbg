@@ -42,7 +42,7 @@ protected:
         
         reqLen++; //Include null term
 
-        if (size > 0 && reqLen > size)
+        if ((ULONG)reqLen > size)
         {
             return 0;
         }

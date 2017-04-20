@@ -50,7 +50,7 @@ BOOL RtfBuildRtfTextA(PRTF_DATA rtf, LPSTR *rtfText, DWORD *textLen)
     //Font table
     DmaStringWriteA(dma, "{\\fonttbl ");
 
-    for (int i = 0;i < rtf->fontCount;i++)
+    for (DWORD i = 0;i < rtf->fontCount;i++)
     {
         DmaStringWriteA(dma, "{\\f%d\\fnil\\fcharset%d %s;}", i, 0, rtf->fontTable[i]);
 
@@ -61,7 +61,7 @@ BOOL RtfBuildRtfTextA(PRTF_DATA rtf, LPSTR *rtfText, DWORD *textLen)
     //Color table
     DmaStringWriteA(dma, "{\\colortbl ;");
 
-    for (int i = 0;i < rtf->colorCount;i++)
+    for (DWORD i = 0;i < rtf->colorCount;i++)
     {
         color = rtf->colorTable[i];
         DmaStringWriteA(dma, "\\red%d\\green%d\\blue%d;", GetRValue(color), GetGValue(color), GetBValue(color));
@@ -192,13 +192,13 @@ BOOL RtfBeginStyleFor(PRTF_DATA rtf, RTF_STYLE rtfStyle, DWORD repeat)
 
     if (rtfStyle & RTFS_NEWLINE)
     {
-        for (int i=0;i<repeat;i++)
+        for (DWORD i=0;i<repeat;i++)
             DmaStringWriteA(rtf->rtfDma, "\\line");
     }
 
     if (rtfStyle & RTFS_TAB)
     {
-        for (int i=0;i<repeat;i++)
+        for (DWORD i=0;i<repeat;i++)
             DmaStringWriteA(rtf->rtfDma, "\\tab");
     }
 

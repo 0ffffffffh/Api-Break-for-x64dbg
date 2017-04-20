@@ -33,7 +33,6 @@ private:
     void GetFromGUI()
     {
         Settings *setting = AbGetSettings();
-        LPSTR scripts;
 
         setting->exposeDynamicApiLoads = this->chkDetectDynLdr->GetState();
         setting->includeGetModuleHandle = this->chkInclGetModHandle->GetState();
