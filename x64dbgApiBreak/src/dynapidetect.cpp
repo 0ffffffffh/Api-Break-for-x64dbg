@@ -328,7 +328,7 @@ bool AbpIsValidApi(const char *module, const char *function, duint *rva)
 
     moduleSize = GetFileSize(moduleFile, NULL);
 
-    mapping = CreateFileMappingA(moduleFile, NULL, PAGE_READONLY | SEC_IMAGE_NO_EXECUTE, 0, ALIGNTO_PAGE(moduleSize), NULL);
+    mapping = CreateFileMappingA(moduleFile, NULL, PAGE_READONLY, 0, ALIGNTO_PAGE(moduleSize), NULL);
 
     if (!mapping)
     {

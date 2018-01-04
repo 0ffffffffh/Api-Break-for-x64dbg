@@ -338,7 +338,6 @@ LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
 
     willContinue = MessageBoxA(NULL, msgBuf, "Quest", MB_ICONQUESTION | MB_YESNO) == IDYES;
 
-    
     if (willContinue)
     {
         ppc = (PPASSED_PARAMETER_CONTEXT)bpcb->user;
