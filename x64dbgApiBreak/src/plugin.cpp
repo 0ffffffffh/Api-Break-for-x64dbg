@@ -403,8 +403,9 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
         {
             DBGPRINT("Breakpoint has registered callback. Raising the breakpoint callback");
 
+
             //get current register context for current state
-            DbgGetRegDump(&bpcb->regContext);
+            DbgGetRegDumpEx(&bpcb->regContext,sizeof(REGDUMP));
 
             bpcb->bp = info->breakpoint;
 
