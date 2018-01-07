@@ -180,3 +180,12 @@ Settings *AbGetSettings()
 {
     return &AbpSettings;
 }
+
+void AbSettingsDestroyResources()
+{
+	if (AbpSettings.mainScripts)
+	{
+		FREESTRING(AbpSettings.mainScripts);
+		AbpSettings.mainScripts = NULL;
+	}
+}

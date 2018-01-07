@@ -98,7 +98,8 @@ void AbpParseScripts()
     }
 
     DBGPRINT("%d type(s) parsed.", AbParsedTypeCount);
-
+	
+	FREESTRING(scripts);
     FREESTRING(line);
 }
 
@@ -141,6 +142,9 @@ void AbpRaiseDbgStateChangeEvent()
 void AbReleaseAllSystemResources(bool isInShutdown)
 {
     DBGPRINT("Releasing used resources. shutdown=%d",isInShutdown);
+
+	SmmReleaseResources(isInShutdown);
+	AbSettingsDestroyResources();
 
     AbiEmptyInstructionCache();
     AbiReleaseDeferredResources();
@@ -218,6 +222,13 @@ DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
     strcpy_s(initStruct->pluginName, 256, "Api Break");
     AbPluginHandle = initStruct->pluginHandle;
 
+#if _DEBUG
+	if (MessageBoxA(NULL, "Wanna break into debugger?", "Dive-in", MB_YESNO | MB_ICONQUESTION) == IDYES)
+	{
+		__debugbreak();
+	}
+#endif
+
 	if (AbpNeedsNewerx64Dbg())
 	{
 		MessageBoxA(NULL,
@@ -228,6 +239,7 @@ DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
 		return false;
 	}
 
+	SmmInitializeResources();
     AbSettingsLoad();
     AbiInitDynapi();
 
@@ -246,6 +258,8 @@ DBG_LIBEXPORT bool plugstop()
 
     if (hmod)
         FreeLibrary(hmod);
+
+	AbRevealPossibleMemoryLeaks();
 
     return true;
 }

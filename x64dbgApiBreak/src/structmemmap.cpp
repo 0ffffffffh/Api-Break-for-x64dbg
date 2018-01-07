@@ -385,19 +385,32 @@ BOOL SmmpAddSList(PSLIST list, void *value)
     return TRUE;
 }
 
+void SmmpClearList(PSLIST list, BOOL memFreeValue)
+{
+	PSLISTNODE tmp;
+
+	while (list->head != NULL)
+	{
+		tmp = list->head->next;
+
+		if (memFreeValue)
+			FREEOBJECT(list->head->value);
+
+		FREEOBJECT(list->head);
+		list->head = tmp;
+	}
+
+	list->count = 0;
+}
+
 void SmmpDestroySList(PSLIST list)
 {
-    PSLISTNODE tmp;
-
-    while (list->head != NULL)
-    {
-        tmp = list->head->next;
-        FREEOBJECT(list->head);
-        list->head = tmp;
-    }
-
-    FREEOBJECT(list);
+	if (list->head)
+		SmmpClearList(list,FALSE);
+    
+	FREEOBJECT(list);
 }
+
 
 
 BOOL SmmCreateMapTypeInfo(const char *name, WORD size, BOOL isSigned, CONVERTER_METHOD method, WORD *index)
@@ -1674,6 +1687,7 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
     LONG err = -1;
     LPWSTR inclFileW = NULL;
     WCHAR fullInclFileW[MAX_PATH];
+	BOOL success = FALSE;
 
     if (!SmmpTokenize(typeDefString, &tokenList))
         return FALSE;
@@ -1693,13 +1707,13 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
             if (err >= 0)
             {
                 SmmpRaiseParseError(err);
-                return FALSE;
+				goto exit;
             }
 
             inclFileW = HlpAnsiToWideString(Stringof(node));
 
             if (!inclFileW)
-                return FALSE;
+                goto exit;
 
             SmmpBuildNewFileOrURL(fullInclFileW, sizeof(fullInclFileW), inclFileW);
             
@@ -1717,7 +1731,7 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
         {
             if (!SmmpParseFunctionSignature(&node, &fnSign))
             {
-                return FALSE;
+                goto exit;
             }
 
             SmmpAddSList(SmmpFnSignList, fnSign);
@@ -1728,7 +1742,7 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
             if (!_SmmpParseType(&node, &typeInfo))
             {
                 //release all
-                return FALSE;
+                goto exit;
             }
 
             SmmpAddSList(SmmpUserTypeList, typeInfo);
@@ -1741,15 +1755,25 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
 		else if (!_stricmp(Stringof(node), "alias"))
 		{
 			if (!SmmpParseAlias(&node))
-				return FALSE;
+				goto exit;
 		}
 
     }
 
+	success = TRUE;
+
     if (typeCount)
         *typeCount += compiledTypeCount;
 
-    return TRUE;
+exit:
+
+
+	for (PSLISTNODE node = tokenList->head; node != NULL; node = node->next)
+		FREEOBJECT(node->value);
+
+	SmmpDestroySList(tokenList);
+
+    return success;
 }
 
 BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount)
@@ -1759,40 +1783,10 @@ BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount)
     if (!typeCount)
         return FALSE;
 
-    if (!SmmpFnSignList)
-    {
-        //TODO: cleanup on failure
-        if (!SmmpCreateSLIST(&SmmpFnSignList))
-            goto exit;
-
-        if (!SmmpCreateSLIST(&SmmpTypeList))
-            goto exit;
-
-        if (!SmmpCreateSLIST(&SmmpUserTypeList))
-            goto exit;
-
-		if (!SmmpCreateSLIST(&SmmpAliasList))
-			goto exit;
-
-        if (!SmmpInitBasePrimitiveTypes())
-            goto exit;
-
-		if (!SmmpInitBaseAliases())
-			goto exit;
-
-        DmaCreateAdapter(sizeof(char), 64, &SmmpParseErrorContent);
-
-        SmmpInitWorkdirStack();
-
-        *typeCount = 0;
-    }
-
     success = SmmpParseType(typeDefString,typeCount);
 
-exit:
-
     if (!success)
-        SmmReleaseResources();
+        SmmReleaseResources(false);
 
     return success;
 }
@@ -1937,34 +1931,71 @@ BOOL SmmHasParseError(LPSTR *errorString)
     return FALSE;
 }
 
-VOID SmmReleaseResources()
+VOID SmmInitializeResources()
+{
+	bool success = false;
+
+	if (!SmmpCreateSLIST(&SmmpFnSignList))
+		goto exit;
+
+	if (!SmmpCreateSLIST(&SmmpTypeList))
+		goto exit;
+
+	if (!SmmpCreateSLIST(&SmmpUserTypeList))
+		goto exit;
+
+	if (!SmmpCreateSLIST(&SmmpAliasList))
+		goto exit;
+
+	if (!SmmpInitBasePrimitiveTypes())
+		goto exit;
+
+	if (!SmmpInitBaseAliases())
+		goto exit;
+
+	DmaCreateAdapter(sizeof(char), 64, &SmmpParseErrorContent);
+
+	SmmpInitWorkdirStack();
+
+	success = true;
+exit:
+
+	if (!success)
+		SmmReleaseResources(true);
+}
+
+VOID SmmReleaseResources(bool fullRelease)
 {
     PGENERIC_DATATYPE_INFO gdi;
     PFNSIGN fnSign;
-
     BOOL isPrimv = FALSE;
 
-	//We wont free primitive and user type info.
-	//Because these are freed in 
-    for (int i = 0;i < MAX_TYPE_IDENTS;i++)
-    {
-        if (TYPE_IDENTS[i].pti != NULL)
-        {
-            TYPE_IDENTS[i].pti = NULL;
-        }
-    }
+	
+	if (fullRelease)
+	{
+		RtlZeroMemory(TYPE_IDENTS, sizeof(typeidents) * MAX_TYPE_IDENTS);
+	}
 
     if (SmmpUserTypeList != NULL)
     {
-        SmmpDestroySList(SmmpUserTypeList);
-        SmmpUserTypeList = NULL;
+		SmmpClearList(SmmpUserTypeList,FALSE);
+
+		if (fullRelease)
+		{
+			SmmpDestroySList(SmmpUserTypeList);
+			SmmpUserTypeList = NULL;
+		}
     }
 
 	if (SmmpAliasList != NULL)
 	{
-		//TODO: delete records
-		SmmpDestroySList(SmmpAliasList);
-		SmmpAliasList = NULL;
+		SmmpClearList(SmmpAliasList,TRUE);
+
+		if (fullRelease)
+		{
+			SmmpDestroySList(SmmpAliasList);
+			SmmpAliasList = NULL;
+		}
 	}
 
     if (SmmpTypeList != NULL)
@@ -1983,14 +2014,21 @@ VOID SmmReleaseResources()
                 {
                     FREEOBJECT(RECORD_OF(fieldNode, PSTRUCTMEMBERFIELD));
                 }
+
+				SmmpDestroySList(((PSTRUCTINFO)gdi)->fields);
             }
 
             FREEOBJECT(gdi);
 
         }
 
-        SmmpDestroySList(SmmpTypeList);
-        SmmpTypeList = NULL;
+		SmmpClearList(SmmpTypeList,FALSE);
+
+		if (fullRelease)
+		{
+			SmmpDestroySList(SmmpTypeList);
+			SmmpTypeList = NULL;
+		}
     }
 
 
@@ -1999,11 +2037,24 @@ VOID SmmReleaseResources()
         for (PSLISTNODE node = SmmpFnSignList->head; node != NULL; node = node->next)
         {
             fnSign = RECORD_OF(node, PFNSIGN);
-            FREEOBJECT(fnSign->args);
+
+			if (fnSign->ret)
+				FREEOBJECT(fnSign->ret);
+			
+			if (fnSign->args)
+				FREEOBJECT(fnSign->args);
+
+			RtlZeroMemory(fnSign, sizeof(FNSIGN));
+			FREEOBJECT(fnSign);
         }
 
-        SmmpDestroySList(SmmpFnSignList);
-        SmmpFnSignList = NULL;
+		SmmpClearList(SmmpFnSignList,FALSE);
+
+		if (fullRelease)
+		{
+			SmmpDestroySList(SmmpFnSignList);
+			SmmpFnSignList = NULL;
+		}
     }
 
     SmmpInitWorkdirStack();

@@ -21,4 +21,6 @@ bool AbSettingsReset();
 
 Settings *AbGetSettings();
 
+void AbSettingsDestroyResources();
+
 #endif // !__SETTINGS_H_

@@ -30,6 +30,8 @@ BOOL SmmParseFromFileA(LPCSTR fileName, WORD *typeCount);
 
 BOOL SmmHasParseError(LPSTR *errorString);
 
-VOID SmmReleaseResources();
+VOID SmmInitializeResources();
+
+VOID SmmReleaseResources(bool fullRelease);
 
 #endif // !__STRUCTMEMMAP_H__

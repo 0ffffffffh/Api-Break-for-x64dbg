@@ -14,11 +14,34 @@
 #pragma comment(lib, "pluginsdk/TitanEngine/TitanEngine_x86.lib")
 #endif
 
+
+
 bool AbMemReadGuaranteed(duint va, void *dest, duint size);
 
-void *AbMemoryAlloc(int size);
-void *AbMemoryRealloc(void *memPtr, int newSize);
-void AbMemoryFree(void *memPtr);
+
+#define TRACK_MEMORY_ALLOCATIONS
+
+#ifdef TRACK_MEMORY_ALLOCATIONS
+void *AbMemoryAlloc_DBG(int size,const char *file, const char *func, const int line);
+void *AbMemoryRealloc_DBG(void *memPtr, int newSize, const char *file, const char *func, const int line);
+void AbMemoryFree_DBG(void *memPtr);
+
+#define AbMemoryAlloc(size)					AbMemoryAlloc_DBG(size, __FILE__, __FUNCTION__,__LINE__)
+#define AbMemoryRealloc(memPtr, newSize)	AbMemoryRealloc_DBG(memPtr,newSize,__FILE__, __FUNCTION__,__LINE__)
+#define AbMemoryFree(memPtr)				AbMemoryFree_DBG(memPtr)
+
+
+#else
+#define AbMemoryAlloc(size)					_AbMemoryAlloc(size)
+#define AbMemoryRealloc(memPtr, newSize)	_AbMemoryRealloc(memPtr,newSize)
+#define AbMemoryFree(memPtr)				_AbMemoryFree(memPtr)
+#endif
+
+void *_AbMemoryAlloc(int size);
+void *_AbMemoryRealloc(void *memPtr, int newSize);
+void _AbMemoryFree(void *memPtr);
+
+void AbRevealPossibleMemoryLeaks();
 
 void AbReleaseAllSystemResources(bool isInShutdown);
 
