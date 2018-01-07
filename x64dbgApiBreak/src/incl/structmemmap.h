@@ -10,9 +10,9 @@ typedef struct __FNSIGN *PFNSIGN;
 
 BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, ApiFunctionInfo *afi, LPSTR *mapResult);
 
-BOOL SmmMapRemoteMemory(duint memory, ULONG size, const char *typeName);
+//BOOL SmmMapRemoteMemory(duint memory, ULONG size, const char *typeName);
 
-BOOL SmmMapMemory(void *memory, ULONG size, const char *typeName);
+BOOL SmmMapMemoryForType(void *memory, ULONG size, const char *typeName);
 
 BOOL SmmGetFunctionSignature(const char *module, const char *function, PFNSIGN *signInfo);
 

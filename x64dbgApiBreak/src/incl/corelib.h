@@ -22,7 +22,7 @@ void AbMemoryFree(void *memPtr);
 
 void AbReleaseAllSystemResources(bool isInShutdown);
 
-BOOL AbRaiseSystemError(const char *errorDesc, int errCode);
+BOOL AbRaiseSystemError(const char *errorDesc, int errCode, const char *func, const int line);
 
 FORWARDED int       AbPluginHandle;
 FORWARDED HWND      AbHwndDlgHandle;

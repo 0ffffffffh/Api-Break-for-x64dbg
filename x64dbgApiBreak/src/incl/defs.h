@@ -23,7 +23,7 @@ typedef unsigned char uchar;
 
 #endif
 
-#define RAISEGLOBALERROR(errString) AbRaiseSystemError(errString, 0)
+#define RAISEGLOBALERROR(errString) AbRaiseSystemError(errString, 0,__FUNCTION__,__LINE__)
 
 #define BIGERROR(msg) DBGPRINT(msg); \
                      __debugbreak()
@@ -52,12 +52,14 @@ typedef unsigned char uchar;
 
 #define AB_VERSION_MAJOR 0
 #define AB_VERSION_MINOR 5
-#define AB_VERSION_BUILD 30
+#define AB_VERSION_BUILD 38
 
 #if _WIN64
 #define AB_PLATFORM     "x64"
+#define PLATFORM_SIZE	64
 #else
 #define AB_PLATFORM     "x86"
+#define PLATFORM_SIZE	32
 #endif
 
 #define AB_PHASE        "BETA"

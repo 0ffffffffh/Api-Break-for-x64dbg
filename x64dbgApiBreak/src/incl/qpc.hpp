@@ -39,7 +39,8 @@ private:
         LARGE_INTEGER now;
 
         QueryPerformanceCounter(&now);
-
+		
+		now.QuadPart *= 1000;
         return now.QuadPart / double(freq.QuadPart);
     }
 
@@ -102,7 +103,7 @@ public:
         {
             DmaReadTypeAlignedSequence(list, i, 1, &perf);
 
-            DBGPRINT("%s -> TFB: %lf, TW: %lf", perf.nameFor, perf.timesFromBegin, perf.timesWork);
+            DBGPRINT("%s -> TFB: %lf ms, TW: %lf ms", perf.nameFor, perf.timesFromBegin, perf.timesWork);
         }
     }
 

@@ -4,6 +4,7 @@
 #include <pluginsdk/bridgemain.h>
 #include <settings.h>
 #include <structmemmap.h>
+#include <qpc.hpp>
 
 using namespace Script::Module;
 using namespace Script::Symbol;
@@ -440,6 +441,8 @@ void AbReleaseModuleResources()
 
 bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 {
+	DECL_QPREF;
+
     ListInfo moduleList = { 0 };
     ListInfo functionSymbolList = { 0 };
 
@@ -453,6 +456,9 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
     if (!AbfNeedsReload)
         return true;
 
+	QPERF_BEGIN();
+	DBGPRINT("loading module list");
+
     //First, detect dynamically loaded apis. 
     //And mark the loaded api export as an imported by exe
 
@@ -461,6 +467,12 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
         if (moduleList.data != NULL)
             modListOk = true;
     }
+
+	DBGPRINT("%d module loaded.", moduleList.count);
+
+	QPERF_TIME("module list load");
+
+	DBGPRINT("loading symbol list");
 
     if (Script::Symbol::GetList(&functionSymbolList))
     {
@@ -474,25 +486,32 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 
     sym = static_cast<SymbolInfo *>(functionSymbolList.data);
     
+	QPERF_TIME("Symbol list load");
+
+	DBGPRINT("%d symbol loaded.", functionSymbolList.count);
+
     for (int i = 0;i < functionSymbolList.count;i++)
     {
+
         if (onlyImportsByExe)
         {
             if (sym->type == Import && HlpEndsWithA(sym->mod, ".exe",FALSE, 4))
             {
                 //Executables provides psoude module import data
                 //for now we reserve api registration slot
-                if (AbpRegisterApi(sym, &afi))
-                    mai = afi->ownerModule;
+				if (AbpRegisterApi(sym, &afi))
+					mai = afi->ownerModule;
                 
             }
             else if (sym->type == Export && !HlpEndsWithA(sym->mod,".exe",FALSE, 4))
             {
+
+				
                 //Ok. we walkin on the real export modules now.
                 //try to get AFI if there is exist a reserved for psoude import data
                 afi = AbpSearchApiFunctionInfo(mai, sym->name);
-
-                //If exist make a real registration for exist slot
+				
+				//If exist make a real registration for exist slot
                 if (afi != NULL)
                     AbpRegisterApi(sym, NULL);
             }
@@ -507,6 +526,10 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
 
         sym++;
     }
+
+	DBGPRINT("api registration done");
+
+	QPERF_TIME("Api search and registration");
 
     if (AbpModuleList.size() == 0 )
     {
@@ -523,20 +546,27 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
     if (onlyImportsByExe)
         AbpDeregisterModule(mai);
 
+	
     AbpLinkApiExportsToModule(&moduleList);
+	QPERF_TIME("Linking export to module");
 
     success = true;
 
     DBGPRINT("%d module found.", AbpModuleList.size());
     
-    if (AbGetSettings()->exposeDynamicApiLoads)
-        AbiDetectAPIsUsingByGetProcAddress();
+	if (AbGetSettings()->exposeDynamicApiLoads)
+	{
+		AbiDetectAPIsUsingByGetProcAddress();
+		QPERF_TIME("Detection GetProcAddress");
+	}
     else
         DBGPRINT("dynamic api detection disabled!");
 
     AbfNeedsReload = FALSE;
 
 cleanAndExit:
+
+	QPERF_DUMP();
 
     if (symListOk)
         BridgeFree(functionSymbolList.data);

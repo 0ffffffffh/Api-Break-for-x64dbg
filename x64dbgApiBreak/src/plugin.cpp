@@ -154,14 +154,14 @@ void AbReleaseAllSystemResources(bool isInShutdown)
     }
 }
 
-BOOL AbRaiseSystemError(const char *errorDesc, int errCode)
+BOOL AbRaiseSystemError(const char *errorDesc, int errCode,const char *func, const int line)
 {
     LPSTR msg;
     BOOL dbgBreak;
 
     HlpPrintFormatBufferA(&msg,
-        "An error occurred;\r\n\r\n%s\r\nDo you want to break into debugger?",
-        errorDesc);
+        "An error occurred at %s:%d;\r\n\r\n%s\r\nDo you want to break into debugger?",
+        func,line,errorDesc);
 
     dbgBreak = MessageBoxA(NULL, msg, "Error", MB_ICONERROR | MB_YESNO) == IDYES;
 
@@ -174,6 +174,33 @@ BOOL AbRaiseSystemError(const char *errorDesc, int errCode)
     }
 
     return FALSE;
+}
+
+typedef bool(*pfnDbgGetRegDumpEx)(REGDUMP* regdump, size_t size);
+HMODULE g_DbgLib = NULL;
+
+pfnDbgGetRegDumpEx _DbgGetRegDumpEx = NULL;
+
+#define VALTOSTRFY(val) _stringfy(val)
+
+#define BRIDGE_DLL "x" VALTOSTRFY(PLATFORM_SIZE) "bridge.dll"
+
+bool AbpNeedsNewerx64Dbg()
+{
+	bool needsNew = false;
+
+	g_DbgLib = GetModuleHandleA(BRIDGE_DLL);
+
+	if (!g_DbgLib)
+	{
+		RAISEGLOBALERROR("dbglib error");
+		return false;
+	}
+
+	if (!(_DbgGetRegDumpEx = (pfnDbgGetRegDumpEx)GetProcAddress(g_DbgLib, "DbgGetRegDumpEx")))
+		needsNew = true;
+
+	return needsNew;
 }
 
 void __AbpInitMenu()
@@ -191,9 +218,18 @@ DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
     strcpy_s(initStruct->pluginName, 256, "Api Break");
     AbPluginHandle = initStruct->pluginHandle;
 
+	if (AbpNeedsNewerx64Dbg())
+	{
+		MessageBoxA(NULL,
+			"this version of plugin uses new x64dbg API. Consider update x64dbg to the new version.",
+			"warning",
+			MB_OK | MB_ICONWARNING);
+
+		return false;
+	}
+
     AbSettingsLoad();
     AbiInitDynapi();
-
 
     LoadLibraryA("Riched20.dll");
 
@@ -405,7 +441,7 @@ DBG_LIBEXPORT void CBBREAKPOINT(CBTYPE cbType, PLUG_CB_BREAKPOINT* info)
 
 
             //get current register context for current state
-            DbgGetRegDumpEx(&bpcb->regContext,sizeof(REGDUMP));
+            _DbgGetRegDumpEx(&bpcb->regContext,sizeof(REGDUMP));
 
             bpcb->bp = info->breakpoint;
 

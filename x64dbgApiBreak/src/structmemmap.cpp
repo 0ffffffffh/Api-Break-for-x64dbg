@@ -51,6 +51,7 @@
 
 #define FS_TYPENOTFOUND                 FAILBASE_PARSER + 20
 #define FS_EXPECTINCLFILEPATH           FAILBASE_PARSER + 21
+#define FS_EXPECTIDENT					FAILBASE_PARSER + 22
 
 //LINKED LIST
 
@@ -97,8 +98,11 @@ typedef struct
     WORD                        cbSize;
     char                        name[MAX_TYPENAME_SIZE];
     DWORD                       structSize;
-    SmmListOf(PTYPEINFOFIELD)   fields;
+    SmmListOf(PSTRUCTMEMBERFIELD)   fields;
 }*PSTRUCTINFO, STRUCTINFO;
+
+
+////////////////////////
 
 typedef struct
 {
@@ -115,7 +119,7 @@ typedef struct
         PSTRUCTINFO             structType;
     }type;
 
-}*PTYPEINFOFIELD, TYPEINFOFIELD;
+}*PSTRUCTMEMBERFIELD, STRUCTMEMBERFIELD;
 
 typedef struct
 {
@@ -131,11 +135,39 @@ typedef struct
     }typeInfo;
 }*PARGINFO, ARGINFO;
 
+typedef struct
+{
+	union
+	{
+		PVOID					u;
+		PSTRUCTINFO				typeStruct;
+		PPRIMITIVETYPEINFO		typePrimitive;
+	}typeInfo;
+}*PRETINFO, RETINFO;
+
+#define CDI_FUNCTION_ARGUMENT	1
+#define CDI_FUNCTION_RETURN		2
+#define CDI_STRUCTURE_FIELD		3
+
+typedef struct
+{
+	USHORT type;
+
+	union
+	{
+		PARGINFO			argInfo;
+		PRETINFO			retInfo;
+		PSTRUCTMEMBERFIELD	fieldInfo;
+
+	}u;
+}*PCOMMON_DATAFIELD_INFO,COMMON_DATAFIELD_INFO;
+
 typedef struct __FNSIGN
 {
     char                        name[256];
     char                        module[256];
     PARGINFO                    args;
+	PRETINFO					ret;
     SHORT                       argCount;
     BOOL                        hasOutArg;
 }*PFNSIGN, FNSIGN;
@@ -145,6 +177,12 @@ typedef struct
     const char *                identName;
     PPRIMITIVETYPEINFO          pti;
 }typeidents;
+
+typedef struct
+{
+	char alias[64];
+	PVOID mappedType;
+}*PTYPEALIAS,TYPEALIAS;
 
 #define SMMP_WORKDIR_STACKSIZE  10
 typedef struct
@@ -178,16 +216,6 @@ static typeidents TYPE_IDENTS[] =
 };
 
 #define SMM_SPECIAL_PRIMITIVE_COUNT 4
-static struct {
-    const char *    alias;
-    int             index;
-}TYPE_ALIASES[] =
-{
-    { "BYTE",4 },
-    { "WORD",7 },
-    { "DWORD",9 },
-    { "QWORD",11 }
-};
 
 #define MAX_TYPE_IDENTS             sizeof(TYPE_IDENTS) / sizeof(typeidents)
 #define MAX_USABLE_TYPE_IDENTS      (MAX_TYPE_IDENTS - SMM_SPECIAL_PRIMITIVE_COUNT)
@@ -196,6 +224,7 @@ WCHAR SmmpScriptWorkDir[MAX_PATH] = { 0 };
 BOOL SmmpWorkDirIsLocal = TRUE;
 
 PSLIST  SmmpUserTypeList = NULL, SmmpFnSignList = NULL;
+PSLIST SmmpAliasList = NULL;
 PSLIST  SmmpTypeList = NULL;
 PDMA    SmmpParseErrorContent = NULL;
 
@@ -222,7 +251,6 @@ void SmmpRegisterRtfColorAndFonts(Rtf * data)
 
     data->RegisterFont("Segoe UI", 0);
 }
-
 
 const char *FAIL_MESSAGES[] =
 {
@@ -253,7 +281,8 @@ const char *FAIL_MESSAGES[] =
     "unexpected token",
     "unexpected syntax ending",
     "Type not found",
-    "filepath expected for @incl."
+    "filepath expected for @incl.",
+	"identifier expected."
 };
 
 
@@ -274,8 +303,6 @@ void SmmpPushWorkdir()
     //And We will know that the stack is full
     if (spi > SMMP_WORKDIR_STACKSIZE)
         return;
-
-    
 
     SmmpWorkDirStack.Stack[spi].isLocal = !HlpBeginsWithW(SmmpScriptWorkDir, L"http", FALSE, 4);
     wcscpy(SmmpWorkDirStack.Stack[spi].workDir, SmmpScriptWorkDir);
@@ -372,6 +399,7 @@ void SmmpDestroySList(PSLIST list)
     FREEOBJECT(list);
 }
 
+
 BOOL SmmCreateMapTypeInfo(const char *name, WORD size, BOOL isSigned, CONVERTER_METHOD method, WORD *index)
 {
     PPRIMITIVETYPEINFO pmti = NULL;
@@ -405,14 +433,19 @@ BOOL SmmCreateMapTypeInfo(const char *name, WORD size, BOOL isSigned, CONVERTER_
 
 #define VALOFPTR(type, ptr) (*((type *)ptr))
 
+#ifdef MAP_LOCAL
+#define IMPLEMENT_CONVERTER(name, type, format) 
+#else
 #define IMPLEMENT_CONVERTER(name, type,format) void Convert ## name  (char *buf, void *mem, bool isValue) { \
                                                 type tval; \
                                                 if (!isValue) \
-                                                    AbMemReadGuaranteed(VALOFPTR(duint,mem),&tval,sizeof(tval)); \
+                                                    AbMemReadGuaranteed((duint)mem,&tval,sizeof(tval)); \
                                                 else \
-                                                    tval = VALOFPTR(type,mem); \
+                                                    tval = (type)mem; \
                                                 sprintf(buf,format,tval); \
-                                            } \
+                                            } 
+
+#endif
 
 #pragma warning(disable:4477)
 
@@ -444,7 +477,7 @@ void ConvertString(char *buf, void *mem, bool dummy)
 #else
     char lbuf[512];
     
-    if (!DbgGetStringAt(VALOFPTR(duint,mem), lbuf))
+    if (!DbgGetStringAt((duint)mem, lbuf))
         return;
 
     sprintf(buf, "\"%s\"", lbuf);
@@ -472,49 +505,130 @@ void ConvertStringW(char *buf, void *mem, bool dummy)
 #else
     char lbuf[512];
 
-    if (!DbgGetStringAt(VALOFPTR(duint,mem), lbuf))
+    if (!DbgGetStringAt((duint)mem, lbuf))
         return;
 
     sprintf(buf, "%s", lbuf);
 #endif
 }
 
-BOOL SmmpGetTypeInfoByName(const char *name, PVOID *info, BOOL *isPrimitive)
-{
-    BOOL detectIsPrimitiveOnly = info == NULL;
 
-    //First, lookup trough the primitives
-    for (DWORD nx = 0; nx < MAX_TYPE_IDENTS; nx++)
+
+BOOL SmmpTypeIsPrimitive(LPVOID typeData, BOOL *isPrimitive)
+{
+	PGENERIC_DATATYPE_INFO gdti = (PGENERIC_DATATYPE_INFO)typeData;
+
+	if (gdti->cbSize == sizeof(PRIMITIVETYPEINFO))
+	{
+		*isPrimitive = TRUE;
+		return TRUE;
+	}
+	else if (gdti->cbSize == sizeof(STRUCTINFO))
+	{
+		*isPrimitive = FALSE;
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+BOOL SmmpGetTypeInfoByName(const char *name, PVOID *info, BOOL *isPrimitive, BOOL dontCheckForUserTypes)
+{
+	BOOL infoPtrPresent = info != NULL;
+	BOOL isPrimitivePtrPresent = isPrimitive != NULL;
+	
+	//Search for primitives.
+    for (DWORD nx=0; nx < MAX_TYPE_IDENTS; nx++)
     {
         if (!strcmp(TYPE_IDENTS[nx].identName, name))
         {
-            if (!detectIsPrimitiveOnly)
+            if (infoPtrPresent)
                 *info = TYPE_IDENTS[nx].pti;
             
-            *isPrimitive = TRUE;
+			if (isPrimitivePtrPresent)
+				*isPrimitive = TRUE;
 
             return TRUE;
         }
     }
 
-    if (detectIsPrimitiveOnly)
-    {
-        *isPrimitive = FALSE;
-        return TRUE;
-    }
+	//scan the alias list.
+	for (PSLISTNODE node = SmmpAliasList->head; node != NULL; node = node->next)
+	{
+		if (!strcmp(RECORD_OF(node, PTYPEALIAS)->alias, name))
+		{
+			if (infoPtrPresent)
+				*info = RECORD_OF(node, PTYPEALIAS)->mappedType;
 
-    //If its not a primitive then scan the type list
+			if (isPrimitivePtrPresent)
+				SmmpTypeIsPrimitive(*info, isPrimitive);
+
+			return TRUE;
+		}
+	}
+
+	if (dontCheckForUserTypes)
+	{
+		if (isPrimitivePtrPresent)
+			*isPrimitive = FALSE;
+
+		return FALSE;
+	}
+
+	if (isPrimitivePtrPresent)
+		*isPrimitive = FALSE;
+
     for (PSLISTNODE node = SmmpUserTypeList->head; node != NULL; node = node->next)
     {
         if (!strcmp(RECORD_OF(node, PSTRUCTINFO)->name, name))
         {
-            *info = RECORD_OF(node, PSTRUCTINFO);
-            *isPrimitive = FALSE;
-            return TRUE;
+			if (infoPtrPresent)
+				*info = RECORD_OF(node, PSTRUCTINFO);
+            
+			return TRUE;
         }
     }
 
     return FALSE;
+}
+
+BOOL SmmpRegisterAlias(const char *alias, const char *typeName)
+{
+	PTYPEALIAS palias = NULL;
+	PVOID type;
+
+	if (!SmmpGetTypeInfoByName(typeName, &type, NULL, FALSE))
+		return FALSE;
+
+	palias = ALLOCOBJECT(TYPEALIAS);
+
+	if (!palias)
+		return FALSE;
+
+	if (strlen(alias) + 1 > 64)
+	{
+		FREEOBJECT(palias);
+		return FALSE;
+	}
+
+	strcpy(palias->alias, alias);
+	palias->mappedType = type;
+
+	SmmpAddSList(SmmpAliasList, palias);
+
+	return TRUE;
+}
+
+BOOL SmmpInitBaseAliases()
+{
+	LONG success = 0;
+
+	success += SmmpRegisterAlias("BYTE", "ubyte");
+	success += SmmpRegisterAlias("WORD", "ushort");
+	success += SmmpRegisterAlias("DWORD", "ulong");
+	success += SmmpRegisterAlias("QWORD", "ulong64");
+
+	return success;
 }
 
 BOOL SmmpInitBasePrimitiveTypes()
@@ -653,6 +767,7 @@ BOOL SmmpTokenize(LPCSTR typeDefString, PSLIST *tokenList)
     int bufi = 0;
     char *tok;
     BOOL numLoad = FALSE;
+	BOOL skip = FALSE;
 
     PSLIST tokList;
 
@@ -662,6 +777,18 @@ BOOL SmmpTokenize(LPCSTR typeDefString, PSLIST *tokenList)
 
     while (*p)
     {
+		if (skip)
+		{
+			if (*p == '*' && *(p + 1) == '/')
+			{
+				p++;
+				skip = FALSE;
+			}
+
+			p++;
+			continue;
+		}
+
         if (SmmpIsSpecialToken(*p))
         {
             if (bufi > 0)
@@ -680,7 +807,14 @@ BOOL SmmpTokenize(LPCSTR typeDefString, PSLIST *tokenList)
         }
         else
         {
-            buf[bufi++] = *p;
+			//comment begin
+			if (!skip && *p == '/' && *(p+1) == '*')
+			{
+				p++;
+				skip = TRUE;
+			}
+			else
+				buf[bufi++] = *p;
         }
 
         p++;
@@ -694,13 +828,13 @@ BOOL SmmpTokenize(LPCSTR typeDefString, PSLIST *tokenList)
     return TRUE;
 }
 
-BOOL SmmpParseTypeField(PSLISTNODE *beginNode, PTYPEINFOFIELD *fieldPtr)
+BOOL SmmpParseTypeField(PSLISTNODE *beginNode, PSTRUCTMEMBERFIELD *fieldPtr)
 {
     PSLISTNODE node = NULL;
     PPRIMITIVETYPEINFO pmti = NULL;
     PSTRUCTINFO pstr = NULL;
 
-    PTYPEINFOFIELD field = NULL;
+    PSTRUCTMEMBERFIELD field = NULL;
 
     BOOL success = FALSE;
     LONG failStep = 0;
@@ -710,11 +844,11 @@ BOOL SmmpParseTypeField(PSLISTNODE *beginNode, PTYPEINFOFIELD *fieldPtr)
     PVOID info;
     BOOL isPrimitive;
 
-    if (!SmmpGetTypeInfoByName(Stringof(node), &info, &isPrimitive))
+    if (!SmmpGetTypeInfoByName(Stringof(node), &info, &isPrimitive,FALSE))
         OneWayExit(FS_NOFIELDTYPE, exit);
 
-    field = ALLOCOBJECT(TYPEINFOFIELD);
-    memset(field, 0, sizeof(TYPEINFOFIELD));
+    field = ALLOCOBJECT(STRUCTMEMBERFIELD);
+    memset(field, 0, sizeof(STRUCTMEMBERFIELD));
 
 
     if (!field)
@@ -800,7 +934,7 @@ exit:
 WORD SmmpParseTypeFields(PSLISTNODE *beginNode, PSTRUCTINFO typeInfo)
 {
     PSLISTNODE node;
-    PTYPEINFOFIELD field;
+    PSTRUCTMEMBERFIELD field;
 
     BOOL success = FALSE;
 
@@ -849,16 +983,34 @@ WORD SmmpParseTypeFields(PSLISTNODE *beginNode, PSTRUCTINFO typeInfo)
 
 BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 {
-    char name[128] = { 0 }, module[128] = { 0 };
+	char name[128] = { 0 }, module[128] = { 0 }, buf[128] = { 0 };
     char argType[64], argName[128];
     PARGINFO argList = NULL;
+	PRETINFO retInfo;
     SHORT argCount = 0;
     PFNSIGN fnSign = NULL;
-    PVOID argTypeInfo = NULL;
+	PVOID argTypeInfo = NULL, retTypeInfo = NULL;
     BOOL isPrimitive=FALSE,isPtr=FALSE;
     int argInOut = 0,failStep=0;
 
     PSLISTNODE node = (*startNode)->next;
+
+	if (SmmpGetTypeInfoByName(Stringof(node), &retTypeInfo, NULL, FALSE))
+	{
+		retInfo = ALLOCOBJECT(RETINFO);
+
+		if (!retInfo)
+		{
+			RAISEGLOBALERROR("Memory allocation failed.");
+			return FALSE;
+		}
+
+		retInfo->typeInfo.u = retTypeInfo;
+
+		if (!SmmpNextnode(&node))
+			OneWayExit(FS_EXPECTMODNAME, finish);
+	}
+
 
     strcpy(module, Stringof(node));
 
@@ -948,7 +1100,7 @@ BOOL SmmpParseFunctionSignature(PSLISTNODE *startNode, PFNSIGN *funcSign)
 
         strcpy(argList[argCount].name, argName);
 
-        if (!SmmpGetTypeInfoByName(argType, &argTypeInfo, &isPrimitive))
+        if (!SmmpGetTypeInfoByName(argType, &argTypeInfo, &isPrimitive,FALSE))
         {
             OneWayExit(FS_TYPENOTFOUND, finish);
         }
@@ -996,6 +1148,7 @@ finish:
 
     fnSign->argCount = argCount;
     fnSign->args = argList;
+	fnSign->ret = retInfo;
     strcpy(fnSign->name, name);
     strcpy(fnSign->module, module);
 
@@ -1004,6 +1157,44 @@ finish:
     *startNode = node;
 
     return TRUE;
+}
+
+BOOL SmmpParseAlias(PSLISTNODE *startNode)
+{
+	PSLISTNODE node = *startNode;
+	char *realType, *aliasName;
+
+	if (strcmp(Stringof(node), "alias"))
+		return FALSE;
+
+	if (!SmmpNextnode(&node))
+	{
+		SmmpRaiseParseError(FS_EXPECTTYPE);
+		return FALSE;
+	}
+
+	realType = Stringof(node);
+
+	if (!SmmpNextnode(&node))
+	{
+		SmmpRaiseParseError(FS_EXPECTIDENT);
+		return FALSE;
+	}
+
+	aliasName = Stringof(node);
+
+	if (!SmmpRegisterAlias(aliasName, realType))
+	{
+		SmmpRaiseParseError(FS_TYPENOTFOUND);
+		return FALSE;
+	}
+	
+	if (!SmmpNextnode(&node))
+		node = NULL;
+
+	*startNode = node;
+
+	return TRUE;
 }
 
 BOOL _SmmpParseType(PSLISTNODE *startNode, PSTRUCTINFO *typeInfo)
@@ -1080,14 +1271,14 @@ void SmmpDumpMapTypeInfo(PPRIMITIVETYPEINFO mti)
 
 void SmmpDumpType(PSTRUCTINFO type)
 {
-    PTYPEINFOFIELD field;
+    PSTRUCTMEMBERFIELD field;
 
     _DBGPRINT("Name: %s\n", type->name);
     _DBGPRINT("---Fields---\n\n");
 
     for (PSLISTNODE n = type->fields->head; n != NULL; n = n->next)
     {
-        field = RECORD_OF(n, PTYPEINFOFIELD);
+        field = RECORD_OF(n, PSTRUCTMEMBERFIELD);
 
         if (field->isStruct)
         {
@@ -1106,65 +1297,81 @@ void SmmpDumpType(PSTRUCTINFO type)
     }
 }
 
-BOOL SmmpMapMemory(void *memory, Rtf *rtf, ULONG size, PSTRUCTINFO typeInfo, SHORT depth);
-
-BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, Rtf *rtf, BYTE *mem, SHORT lastDepth, OPTIONAL PTYPEINFOFIELD ptif)
+//TODO: detect value or not value?
+BOOL SmmpMapForPrimitiveType(PGENERIC_DATATYPE_INFO pdi, Rtf *rtf, BYTE *mem, SHORT lastDepth, PCOMMON_DATAFIELD_INFO pcdi)
 {
-    PPRIMITIVETYPEINFO pmti;
-    BYTE *subMem;
-    char buffer[1024];
+	PPRIMITIVETYPEINFO pmti;
+	BOOL pcdiPresent = pcdi != NULL;
+	BOOL isPointer = FALSE, isArray = FALSE;
+	ULONG arraySize = 0;
+	char buffer[1024];
     BOOL result = TRUE;
+	bool isValue = false;
 
-    if (ptif != NULL && ptif->isPointer)
+	if (pcdiPresent)
+	{
+		switch (pcdi->type)
+		{
+		case CDI_FUNCTION_ARGUMENT:
+			if (!pcdi->u.argInfo->isStructure)
+				pmti = pcdi->u.argInfo->typeInfo.primitiveInfo;
+			else
+				return FALSE;
+
+			isPointer = pcdi->u.argInfo->isPointer;
+			isArray = FALSE;
+			arraySize = 0;
+			break;
+		case CDI_STRUCTURE_FIELD:
+			if (!pcdi->u.fieldInfo->isStruct)
+				pmti = pcdi->u.fieldInfo->type.primitiveType;
+			else
+				return FALSE;
+
+			isPointer = pcdi->u.fieldInfo->isPointer;
+			isArray = pcdi->u.fieldInfo->isArray;
+			arraySize = isArray ? pcdi->u.fieldInfo->arrSize : 0;
+			break;
+		default:
+			return FALSE;
+		}
+	}
+	else
+		pmti = (PPRIMITIVETYPEINFO)pdi;
+	//Ignore return
+	
+    if (isPointer)
     {
-        if (!strcmp(pti->typeName, "char"))
-            pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 3].pti;
-        else if (!strcmp(pti->typeName, "wchar"))
-            pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 2].pti;
-        else if (!strcmp(pti->typeName, "pointer"))
-            pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 1].pti;
-        else
-        {
-            switch (*((WORD *)&ptif->type))
-            {
-            case sizeof(PRIMITIVETYPEINFO) :
-            {
-                pmti = pti;
+		//'*' marked pointer type. we need to dereference and map
+		isValue = false;
 
-                subMem = (BYTE *)AbMemoryAlloc(pmti->size);
+        if (!strcmp(pdi->typeName, "char"))
+            pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 3].pti; //assume string converter
+        else if (!strcmp(pdi->typeName, "wchar"))
+            pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 2].pti; //assume wstring converter
+        else if (!strcmp(pdi->typeName, "pointer"))
+            pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 1].pti; //pointer itself converter
 
-                AbMemReadGuaranteed((duint)mem, subMem, pmti->size);
-
-                pmti->method(buffer, subMem,true);
-
-                AbMemoryFree(subMem);
-
-                goto oneWayExit;
-            }
-            case sizeof(STRUCTINFO) :
-            {
-                DBGPRINT("Not implemeneted yet");
-                result = FALSE;
-                goto oneWayExit;
-            }
-            }
-        }
-
-        pmti->method(buffer, mem,true);
+        pmti->method(buffer, mem, isValue);
     }
-    else if (ptif != NULL && ptif->isArray)
+    else if (isArray)
     {
-        if (!strcmp(pti->typeName, "char"))
+		//if char[] or wchar[] we can assume as string again
+        if (!strcmp(pdi->typeName, "char"))
             pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 3].pti;
-        else if (!strcmp(pti->typeName, "wchar"))
+        else if (!strcmp(pdi->typeName, "wchar"))
             pmti = TYPE_IDENTS[MAX_TYPE_IDENTS - 2].pti;
         else
         {
-            for (int i = 0;i < ptif->arrSize;i++)
+			BYTE *arrPtr = (BYTE *)mem;
+
+            for (ULONG i = 0;i < arraySize;i++)
             {
-                pti->method(buffer, mem,true);
-                //DmaStringWriteA(dma, "[%d] = %s, ",i,buffer);
-                mem += ptif->arrSize;
+				//Map n. index of memory 
+                pmti->method(buffer, arrPtr, false);
+
+				//increment pointer type of array memory
+				mem += pmti->size;
             }
 
             memset(buffer, 0, sizeof(buffer));
@@ -1172,67 +1379,66 @@ BOOL SmmpMapForPrimitiveType(PPRIMITIVETYPEINFO pti, Rtf *rtf, BYTE *mem, SHORT 
             goto oneWayExit;
 
         }
-
-        if (pmti)
-            pmti->method(buffer, mem,true);
     }
-    else
-        pti->method(buffer, mem,true);
+	else
+	{
+		if (!strcmp(pdi->typeName, "string") || !strcmp(pdi->typeName, "wstring"))
+			isValue = false;
+		else
+			isValue = true;
+
+		pmti->method(buffer, mem, isValue);
+	}
 
 oneWayExit:
 
     if (result)
     {
         rtf->Color(RTFC_DEFAULT)->FormatText(buffer);
-        //DmaStringWriteA(dma, buffer);
     }
 
     return result;
 }
 
-BOOL SmmpMapForUserType(PSTRUCTINFO sti, Rtf *rtf, BYTE *mem, SHORT lastDepth)
-{
-    return SmmpMapMemory(mem, rtf, sti->structSize, sti, lastDepth + 1);
-}
+BOOL SmmpMapForStructureType(PGENERIC_DATATYPE_INFO pdi, Rtf *rtf, BYTE *mem, SHORT lastDepth, PCOMMON_DATAFIELD_INFO pcdi);
 
-BOOL SmmpMapField(PTYPEINFOFIELD ptif, Rtf* rtf, BYTE *mem,SHORT lastDepth)
+BOOL SmmpMapField(PSTRUCTMEMBERFIELD ptif, Rtf* rtf, BYTE *mem,SHORT lastDepth)
 {
+	COMMON_DATAFIELD_INFO cdi;
     PPRIMITIVETYPEINFO pmti = NULL;
     BYTE *memArr = NULL;
 
-    if (ptif->isStruct)
-        return SmmpMapForUserType(ptif->type.structType, rtf, mem, lastDepth);
+	cdi.type = CDI_STRUCTURE_FIELD;
+	cdi.u.fieldInfo = ptif;
 
-    return SmmpMapForPrimitiveType(ptif->type.primitiveType, rtf, mem, lastDepth, ptif);
+	if (ptif->isStruct)
+		return SmmpMapForStructureType((PGENERIC_DATATYPE_INFO)ptif->type.structType, rtf, mem, lastDepth + 1, &cdi);
+
+	return SmmpMapForPrimitiveType((PGENERIC_DATATYPE_INFO)ptif->type.primitiveType, rtf, mem, lastDepth + 1, &cdi);
 }
 
 
-BOOL SmmpMapMemory(void *memory, Rtf *rtf, ULONG size, PSTRUCTINFO typeInfo, SHORT depth)
+BOOL SmmpMapForStructureType(PGENERIC_DATATYPE_INFO pdi, Rtf *rtf, BYTE *mem, SHORT lastDepth, PCOMMON_DATAFIELD_INFO pcdi)
 {
-    BYTE *mem;
-    PTYPEINFOFIELD ptif = NULL;
+    PSTRUCTMEMBERFIELD ptif = NULL;
+	PSTRUCTINFO psi = (PSTRUCTINFO)pdi;
+
     DWORD typeSize = 0;
 
     char buf[512];
 
-    if (size < typeInfo->structSize)
-        return FALSE;
+    rtf->FormatText("(Struct of %s) = ", psi->name)->NewLine(1);
 
-    rtf->FormatText("(Struct of %s) = ", typeInfo->name)->NewLine(1);
+    rtf->NewTab(lastDepth)->FormatText("[")->NewLine(1);
 
-    rtf->NewTab(depth)->FormatText("[")->NewLine(1);
-
-    
-    mem = (BYTE *)memory;
-
-    for (PSLISTNODE node = typeInfo->fields->head; node != NULL; node = node->next)
+    for (PSLISTNODE node = psi->fields->head; node != NULL; node = node->next)
     {
-        ptif = RECORD_OF(node, PTYPEINFOFIELD);
+        ptif = RECORD_OF(node, PSTRUCTMEMBERFIELD);
         memset(buf, 0, sizeof(buf));
 
-        rtf->Style(RTFS_TAB, depth + 1)->FormatText("%s = ", ptif->fieldName);
+        rtf->Style(RTFS_TAB, lastDepth + 1)->FormatText("%s = ", ptif->fieldName);
         
-        if (!SmmpMapField(ptif, rtf, mem,depth))
+        if (!SmmpMapField(ptif, rtf, mem,lastDepth))
             return FALSE;
 
         rtf->Style(RTFS_NEWLINE);
@@ -1249,27 +1455,9 @@ BOOL SmmpMapMemory(void *memory, Rtf *rtf, ULONG size, PSTRUCTINFO typeInfo, SHO
 
     }
 
-    rtf->NewTab(depth)->FormatText("]")->NewLine(1);
+    rtf->NewTab(lastDepth)->FormatText("]")->NewLine(1);
 
     return TRUE;
-}
-
-BOOL SmmpTypeIsPrimitive(LPVOID typeData, BOOL *isPrimitive)
-{
-    PGENERIC_DATATYPE_INFO gdti = (PGENERIC_DATATYPE_INFO)typeData;
-
-    if (gdti->cbSize == sizeof(PRIMITIVETYPEINFO))
-    {
-        *isPrimitive = TRUE;
-        return TRUE;
-    }
-    else if (gdti->cbSize == sizeof(STRUCTINFO))
-    {
-        *isPrimitive = FALSE;
-        return TRUE;
-    }
-
-    return FALSE;
 }
 
 
@@ -1278,8 +1466,8 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
     PARGINFO argInfo;
     BOOL isPrimitive;
     BYTE *mem;
-    DWORD typeSize;
     PGENERIC_DATATYPE_INFO pdi;
+	COMMON_DATAFIELD_INFO cdi;
     Rtf *rtf;
 
     rtf = new Rtf();
@@ -1296,16 +1484,13 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
         ->FormatText("%s", fnSign->name)->Color(RTFC_DEFAULT)
         ->FormatText("(")->NewLine(1);
 
-    
     for (int i = 0;i < fnSign->argCount;i++)
     {
         argInfo = &fnSign->args[i];
 
-        if (!SmmpTypeIsPrimitive(argInfo->typeInfo.holder, &isPrimitive))
-            return FALSE;
-
         pdi = (PGENERIC_DATATYPE_INFO)argInfo->typeInfo.holder;
 
+		isPrimitive = pdi->cbSize == sizeof(PRIMITIVETYPEINFO);
 
         rtf->Style(RTFS_TAB, 1)->Color(RTFC_DEFAULT)
             ->FormatText("Arg#%d (", i + 1)->Color(RTFC_LIGHTGREEN)
@@ -1314,24 +1499,17 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
             ->Color(RTFC_LIGHTGREEN)->FormatText("Type")
             ->Color(RTFC_DEFAULT)->FormatText(": %s) = ", pdi->typeName);
 
-        
-        if (argInfo->isPointer)
-        {
-            typeSize = isPrimitive ? argInfo->typeInfo.primitiveInfo->size : argInfo->typeInfo.structInfo->structSize;
+		mem = (BYTE *)passedParams->paramList[i];
 
-            mem = (BYTE *)AbMemoryAlloc(typeSize);
+		cdi.type = CDI_FUNCTION_ARGUMENT;
+		cdi.u.argInfo = argInfo;
 
-            AbMemReadGuaranteed((duint)passedParams->paramList[i], mem, typeSize);
-        }
-        else
-            mem = (BYTE *)passedParams->paramList[i];
-        
-        if (isPrimitive)
-            SmmpMapForPrimitiveType((PPRIMITIVETYPEINFO)argInfo->typeInfo.holder, rtf, mem, 0, NULL);
+		if (isPrimitive)
+			SmmpMapForPrimitiveType(pdi, rtf, mem, 0, &cdi);
         else
         {
             //I need a special formatting for function map of the user types!!
-            SmmpMapForUserType((PSTRUCTINFO)argInfo->typeInfo.holder, rtf, mem, 0);
+            SmmpMapForStructureType(pdi, rtf, mem, 0,&cdi);
         }
 
         rtf->Style(RTFS_NEWLINE);
@@ -1347,41 +1525,27 @@ BOOL SmmMapFunctionCall(PPASSED_PARAMETER_CONTEXT passedParams, PFNSIGN fnSign, 
     return TRUE;
 }
 
-BOOL SmmMapRemoteMemory(duint memory, ULONG size, const char *typeName)
-{
-    BOOL result;
-
-    void *mem = AbMemoryAlloc(size);
-
-    if (!mem)
-        return FALSE;
-
-    //transfer remote process memory to the local memory
-    if (!AbMemReadGuaranteed(memory, mem, size))
-    {
-        AbMemoryFree(mem);
-        return FALSE;
-    }
-
-    result = SmmMapMemory(mem, size, typeName);
-
-    AbMemoryFree(mem);
-
-    return result;
-}
-
-BOOL SmmMapMemory(void *memory, ULONG size, const char *typeName)
+BOOL SmmMapMemoryForType(void *memory, ULONG size, const char *typeName)
 {
     Rtf *rtf;
-    BOOL result;
+    BOOL result, isPrimitive;
+	PGENERIC_DATATYPE_INFO pdi;
 
     rtf = new Rtf();
 
-    for (PSLISTNODE node = SmmpUserTypeList->head; node != NULL; node = node->next)
+    for (PSLISTNODE node = SmmpTypeList->head; node != NULL; node = node->next)
     {
-        if (!strcmp(RECORD_OF(node, PSTRUCTINFO)->name, typeName))
+		pdi = RECORD_OF(node, PGENERIC_DATATYPE_INFO);
+
+        if (!strcmp(pdi->typeName, typeName))
         {
-            result = SmmpMapMemory(memory, rtf, size, RECORD_OF(node, PSTRUCTINFO), 0);
+			isPrimitive = pdi->cbSize == sizeof(PRIMITIVETYPEINFO);
+
+			if (isPrimitive)
+				result = SmmpMapForPrimitiveType(pdi, rtf, (BYTE *)memory, 0, NULL);
+			else
+				result = SmmpMapForStructureType(pdi, rtf, (BYTE *)memory, 0, NULL);
+
             break;
         }
     }
@@ -1511,7 +1675,6 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
     LPWSTR inclFileW = NULL;
     WCHAR fullInclFileW[MAX_PATH];
 
-
     if (!SmmpTokenize(typeDefString, &tokenList))
         return FALSE;
 
@@ -1575,15 +1738,12 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
 
             SmmpDumpType(typeInfo);
         }
+		else if (!_stricmp(Stringof(node), "alias"))
+		{
+			if (!SmmpParseAlias(&node))
+				return FALSE;
+		}
 
-    }
-
-    if (!compiledTypeCount)
-    {
-        if (typeCount)
-            *typeCount = 0;
-
-        return FALSE;
     }
 
     if (typeCount)
@@ -1611,8 +1771,14 @@ BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount)
         if (!SmmpCreateSLIST(&SmmpUserTypeList))
             goto exit;
 
+		if (!SmmpCreateSLIST(&SmmpAliasList))
+			goto exit;
+
         if (!SmmpInitBasePrimitiveTypes())
             goto exit;
+
+		if (!SmmpInitBaseAliases())
+			goto exit;
 
         DmaCreateAdapter(sizeof(char), 64, &SmmpParseErrorContent);
 
@@ -1778,11 +1944,12 @@ VOID SmmReleaseResources()
 
     BOOL isPrimv = FALSE;
 
+	//We wont free primitive and user type info.
+	//Because these are freed in 
     for (int i = 0;i < MAX_TYPE_IDENTS;i++)
     {
         if (TYPE_IDENTS[i].pti != NULL)
         {
-            FREEOBJECT(TYPE_IDENTS[i].pti);
             TYPE_IDENTS[i].pti = NULL;
         }
     }
@@ -1793,6 +1960,12 @@ VOID SmmReleaseResources()
         SmmpUserTypeList = NULL;
     }
 
+	if (SmmpAliasList != NULL)
+	{
+		//TODO: delete records
+		SmmpDestroySList(SmmpAliasList);
+		SmmpAliasList = NULL;
+	}
 
     if (SmmpTypeList != NULL)
     {
@@ -1808,7 +1981,7 @@ VOID SmmReleaseResources()
                     fieldNode != NULL; 
                     fieldNode = fieldNode->next)
                 {
-                    FREEOBJECT(RECORD_OF(fieldNode, PTYPEINFOFIELD));
+                    FREEOBJECT(RECORD_OF(fieldNode, PSTRUCTMEMBERFIELD));
                 }
             }
 

@@ -4,6 +4,8 @@ Api Break is a [x64dbg](http://www.x64dbg.com) plugin which is aimed to set brea
 
 ![ab1](https://raw.githubusercontent.com/0ffffffffh/0ffffffffh.github.io/master/apibreakaction.gif "Breakpoint on callers")
 
+![ab2](https://user-images.githubusercontent.com/437161/34647882-eb65aadc-f39f-11e7-8c14-f1cc3254d0f0.png "Struct and API call mapper")
+
 ####**Features**
 
 * API function entry breakpoint (AEB) 

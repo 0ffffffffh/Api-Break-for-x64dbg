@@ -409,7 +409,7 @@ public:
         UiControlBase *ctrl = NULL;
 
         HWND wnd = GetDlgItem(GetHWND(), ctrlId);
-        DBGPRINT("AX");
+
         ctrl = LookupControl(wnd);
 
         if (ctrl != nullptr)
