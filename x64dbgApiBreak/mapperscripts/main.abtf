@@ -1,0 +1,128 @@
+/*
+
+#################################################################
+WARNING: This mapper script format is still in the design phase. 
+And it may change until the final release. 
+Hence, the scripts that are written based on the draft phase 
+may not work in subsequent versions of ApiBreak plugin.
+
+For now, this description of the script format is quite messy. I can 
+make it better if I have more free time.
+#################################################################
+
+[1 - Builtin Primitive Types]
+
+int : System default size integer
+uint : System default size unsigned integer
+char : Ansi Char
+wchar : Wide char
+byte : 1 byte (8 bit) singed integer
+ubyte : 1 byte (8 bit) unsigned integer
+short : 2 byte (16 bit) signed integer
+ushort : 2 byte (16 bit) unsigned integer
+long : 4 byte (32 bit) signed integer
+ulong : 4 byte (32 bit) unsigned integer
+long64 : 8 byte (64 bit) signed integer
+ulong64 : 8 byte (64 bit) unsigned integer
+
+[2 - Special Primitive Types]
+
+string : ANSI char sequence
+wstring : WIDE char sequence
+pointer : Untyped generic system sized pointer
+archex : Architecture depended hexadecimal value
+
+
+[3 - Builtin Aliases]
+
+BYTE : alias for ubyte
+WORD : alias for ushort
+DWORD : alias for ulong
+QWORD : alias for ulong64
+
+[4 - User defined aliases]
+Users also can define their own aliases 
+
+alias [ALIAS_TYPE_NAME] [OWN_ALIAS_IDENTIFIER_FOR_TYPE]
+
+for example;
+
+alias ulong u32_t
+
+[4 - Including different script sources]
+
+Users can write their api and type definition into multiple file or source
+And they can include these scripts in their own script file for later usage.
+
+They can include scripts from the another local directory or the internet web address. 
+
+@incl [FILEPATH] or [URL]
+
+for example;
+
+@incl 'anotherdirectory/myscript.abtf'
+
+@incl 'http://myserver.com/scripts/main.abtf'
+
+
+
+[5 - API function signature declaration]
+
+fnsign {RETTYPE} [ModuleName]![ApiFunctionName]({[ARGUMENT_TYPE] argName1, ...})
+
+for example:
+Here is TerminateProcess function definition in C style prototype
+
+BOOL WINAPI TerminateProcess(
+  _In_ HANDLE hProcess,
+  _In_ UINT   uExitCode
+);
+
+And this is mapper signature definition 
+
+alias int BOOL //for BOOL typedef. u remember that 'alias' thing?
+
+fnsign BOOL kernel32.dll!TerminateProcess(pointer hprocess, uint exitCode)
+
+or without return type example.
+
+void GdiplusShutdown(
+  __in  ULONG_PTR token
+);
+
+fnsign Gdiplus.dll!GdiplusShutdown(pointer token)
+
+
+[6 - Type struct definition]
+
+maptype [TYPE_IDENTITY]
+{
+	[FIELD_TYPE1] [fieldName1],
+	
+	... 
+	another fields if you have
+}
+
+for example
+
+maptype mytype
+{
+	int 		x;
+	wstring 	str;	
+}
+
+now you can use mytype as declared type as you want. 
+using in api function signature arg, alias or 
+
+NOTE: Currently, nested types are not fully supported. (But I will completely.)
+
+*/
+
+@incl 'base/base.abtf'
+
+/* 'HelloType' defined in base/base.abtf as user type structure */
+alias HelloType MyHelloType;
+
+fnsign pointer kernel32.dll!CreateFileW(wstring fileName, DWORD desiredAccess, DWORD shareMode, pointer secAttrib, DWORD creationDisp, DWORD flagAttrib, out pointer templFile)
+
+

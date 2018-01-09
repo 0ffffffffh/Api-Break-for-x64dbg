@@ -1,0 +1,7 @@
+
+maptype HelloType
+{
+	int val;
+}
+
+
