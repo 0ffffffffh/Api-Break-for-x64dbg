@@ -758,7 +758,7 @@ bool AbSetBreakpointEx(const char *module, const char *apiFunction, duint *funcA
     else
         bpSet = SetBreakpoint(bpAddr);
 
-    
+
     if (!bpSet)
     {
         FREEOBJECT(cbctx);

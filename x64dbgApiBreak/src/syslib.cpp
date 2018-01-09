@@ -12,6 +12,7 @@ typedef struct __MEMLIST_ENTRY
 	struct __MEMLIST_ENTRY *prev;
 	void *mem;
 	int size;
+	BOOL track;
 	char function[128];
 	char filename[256];
 	int  line;
@@ -90,8 +91,6 @@ void _AbMemoryFree(void *memPtr)
     HeapFree(GetProcessHeap(), 0, (LPVOID)memPtr);
 }
 
-
-
 #ifdef TRACK_MEMORY_ALLOCATIONS
 
 void AbRevealPossibleMemoryLeaks()
@@ -152,9 +151,20 @@ void *AbMemoryAlloc_DBG(int size, const char *file, const char *func, const int 
 	return umem;
 }
 
+#define ASSERT(x) if (!(x)) DBGPRINT("Assertation failed. %s",#x)
+
+void dumpNode(PMEMLIST_ENTRY entry)
+{
+	DBGPRINT("ENTRY_DUMP_BEGIN");
+	DBGPRINT("entry = %p, entry->next = %p, entry->prev = %p", entry, entry->next, entry->prev);
+	DBGPRINT("entry data: %s %s:%d", entry->filename, entry->function, entry->line);
+	DBGPRINT("entry->mem = %p", entry->mem);
+	DBGPRINT("\n");
+}
+
 void *AbMemoryRealloc_DBG(void *memPtr, int newSize, const char *file, const char *func, const int line)
 {
-	PMEMLIST_ENTRY entry;
+	PMEMLIST_ENTRY entry, oldEntry,prevEntry, nextEntry;
 	BYTE *realMem, *reallocMem;
 	
 	if (!memPtr)
@@ -162,20 +172,53 @@ void *AbMemoryRealloc_DBG(void *memPtr, int newSize, const char *file, const cha
 	
 	realMem = ((BYTE *)memPtr) - sizeof(MEMLIST_ENTRY);
 
+	AcqMemListSpinlock();
+
 	entry = (PMEMLIST_ENTRY)realMem;
 
-	reallocMem = (BYTE *)_AbMemoryRealloc(realMem, sizeof(MEMLIST_ENTRY) + newSize);
+	prevEntry = entry->prev;
+	nextEntry = entry->next;
+
+	reallocMem = (BYTE *)AbMemoryRealloc_DBG(realMem, sizeof(MEMLIST_ENTRY) + newSize,file,func,line);
 
 	if (!reallocMem)
 		return NULL;
+	
+	oldEntry = entry;
+	entry = (PMEMLIST_ENTRY)reallocMem;
+	
+	if (entry->track)
+		DBGPRINT("reallocating memory %p. old = %p, new = %p (%s:%d)", entry, entry, reallocMem, entry->filename, entry->line);
 
 	if (realMem != reallocMem)
 	{
-		entry = (PMEMLIST_ENTRY)reallocMem;
-		entry->mem = reallocMem;
+		entry->mem = reallocMem + sizeof(MEMLIST_ENTRY);
+
+		//Update previous's next with new allocated node address
+		if (prevEntry)
+			prevEntry->next = entry;
+
+		//Update next's previous with new alloacted node address
+		if (nextEntry)
+			nextEntry->prev = entry;
+
+		//if oldentry was list's head. we have to also update head
+		if (oldEntry == AbpMemList.head)
+			AbpMemList.head = entry;
+
+		//if oldentry was list's tail we have to also update tail
+		if (oldEntry == AbpMemList.tail)
+			AbpMemList.tail = entry;
+
 	}
-	
+
+	ASSERT(entry->prev == prevEntry);
+	ASSERT(entry->next == nextEntry);
+
 	entry->size = newSize;
+
+
+	RelMemListSpinlock();
 
 	return reallocMem + sizeof(MEMLIST_ENTRY);
 }
@@ -200,28 +243,33 @@ void AbMemoryFree_DBG(void *memPtr)
 
 	AcqMemListSpinlock();
 
-	//is not head?
-	if (entry->prev)
+	if (entry == AbpMemList.head && entry == AbpMemList.tail)
 	{
-		entry->prev->next = entry->next;
-
-		//is not tail?
-		if (entry->next)
-			entry->next->prev = entry->prev;
-		else
-			AbpMemList.tail = entry->prev;
+		AbpMemList.head = AbpMemList.tail = NULL;
 	}
-	else
+	else if (entry == AbpMemList.head)
+	{
 		AbpMemList.head = entry->next;
 
+		if (entry->next)
+			entry->next->prev = NULL;
 
-	if (AbpMemList.head)
-		AbpMemList.head->prev = NULL;
+	}
+	else if (entry == AbpMemList.tail)
+	{
+		AbpMemList.tail = entry->prev;
+
+		if (entry->prev)
+			entry->prev->next = NULL;
+	}
 	else
-		AbpMemList.tail = NULL;
+	{
+		entry->prev->next = entry->next;
+		entry->next->prev = entry->prev;
+	}
 
-	if (AbpMemList.tail)
-		AbpMemList.tail->next = NULL;
+	RtlZeroMemory(entry, sizeof(MEMLIST_ENTRY));
+	_AbMemoryFree(entry);
 
 	RelMemListSpinlock();
 
@@ -232,3 +280,26 @@ void AbRevealPossibleMemoryLeaks()
 	DBGPRINT("Memory allocation tracker disabled.!");
 }
 #endif
+
+void AbTrackMemory_DBG(void *memPtr)
+{
+	PMEMLIST_ENTRY entry;
+	BYTE *realMem;
+
+	if (!memPtr)
+		return;
+
+	realMem = ((BYTE *)memPtr) - sizeof(MEMLIST_ENTRY);
+
+	entry = (PMEMLIST_ENTRY)realMem;
+
+	if (entry->mem != memPtr)
+	{
+		DBGPRINT("Invalid memory block (%p)", memPtr);
+		return;
+	}
+
+
+	entry->track = TRUE;
+
+}

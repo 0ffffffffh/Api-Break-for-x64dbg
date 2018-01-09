@@ -365,7 +365,8 @@ void DmaEndDirectWrite(PDMA dma)
 
 BOOL DmaPrepareForRead(PDMA dma, void **nativeMem)
 {
-    BOOL success = VirtualProtectEx(GetCurrentProcess(), dma->memory, dma->totalSize, PAGE_READONLY, &dma->oldProtect);
+	//For now, let the caller get the memory as is.
+	BOOL success = true; 
 
     if (success)
         *nativeMem = dma->memory;
