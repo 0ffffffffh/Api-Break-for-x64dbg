@@ -702,6 +702,8 @@ INTERNAL_EXPORT bool AbiDetectAPIsUsingByGetProcAddress()
 
     DBGPRINT("Dynamic scan finished");
 
+	AbMemoryFree(codeSects);
+
     return true;
 }
 

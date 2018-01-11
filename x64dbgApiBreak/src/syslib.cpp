@@ -8,22 +8,25 @@
 
 typedef struct __MEMLIST_ENTRY
 {
-	struct __MEMLIST_ENTRY *next;
-	struct __MEMLIST_ENTRY *prev;
-	void *mem;
-	int size;
-	BOOL track;
-	char function[128];
-	char filename[256];
-	int  line;
+	ULONG						magic;
+	struct __MEMLIST_ENTRY *	next;
+	struct __MEMLIST_ENTRY *	prev;
+	void *						mem;
+	ULONG						size;
+	BOOL						track;
+	char						function[128];
+	char						filename[256];
+	ULONG						line;
 }*PMEMLIST_ENTRY,MEMLIST_ENTRY;
 
 typedef struct __MEMLIST
 {
-	PMEMLIST_ENTRY head;
-	PMEMLIST_ENTRY tail;
-	volatile ULONG spinLock;
+	PMEMLIST_ENTRY		head;
+	PMEMLIST_ENTRY		tail;
+	volatile ULONG		spinLock;
 }*PMEMLIST,MEMLIST;
+
+#define MEMLIST_ENTRY_MAGIC		0xBAAD7337
 
 MEMLIST AbpMemList = { 0 };
 
@@ -123,6 +126,7 @@ void *AbMemoryAlloc_DBG(int size, const char *file, const char *func, const int 
 
 	umem = ((BYTE *)entry) + sizeof(MEMLIST_ENTRY);
 
+	entry->magic = MEMLIST_ENTRY_MAGIC;
 	entry->next = NULL;
 	entry->prev = NULL;
 	entry->mem = umem;
@@ -162,6 +166,31 @@ void dumpNode(PMEMLIST_ENTRY entry)
 	DBGPRINT("\n");
 }
 
+PMEMLIST_ENTRY AbpValidateAndProbe(void *memPtr)
+{
+	PMEMLIST_ENTRY entry = NULL;
+	BYTE *realMemAddr = NULL;
+
+	realMemAddr = ((BYTE *)memPtr) - sizeof(MEMLIST_ENTRY);
+
+	entry = (PMEMLIST_ENTRY)realMemAddr;
+
+	__try
+	{
+		if (entry->magic != MEMLIST_ENTRY_MAGIC)
+			return NULL;
+
+		if (entry->mem != memPtr)
+			return NULL;
+	}
+	__except(EXCEPTION_CONTINUE_EXECUTION)
+	{
+		return NULL;
+	}
+
+	return entry;
+}
+
 void *AbMemoryRealloc_DBG(void *memPtr, int newSize, const char *file, const char *func, const int line)
 {
 	PMEMLIST_ENTRY entry, oldEntry,prevEntry, nextEntry;
@@ -170,12 +199,20 @@ void *AbMemoryRealloc_DBG(void *memPtr, int newSize, const char *file, const cha
 	if (!memPtr)
 		return AbMemoryAlloc_DBG(newSize, file, func, line);
 	
-	realMem = ((BYTE *)memPtr) - sizeof(MEMLIST_ENTRY);
+
+	entry = AbpValidateAndProbe(memPtr);
+
+	if (!entry)
+	{
+		DBGPRINT("Invalid memory address %p", memPtr);
+		return NULL;
+	}
+
+	realMem = (BYTE *)entry;
 
 	AcqMemListSpinlock();
 
-	entry = (PMEMLIST_ENTRY)realMem;
-
+	
 	prevEntry = entry->prev;
 	nextEntry = entry->next;
 
@@ -226,20 +263,20 @@ void *AbMemoryRealloc_DBG(void *memPtr, int newSize, const char *file, const cha
 void AbMemoryFree_DBG(void *memPtr)
 {
 	PMEMLIST_ENTRY entry;
-	BYTE *realMem;
-
+	
 	if (!memPtr)
 		return;
 
-	realMem = ((BYTE *)memPtr) - sizeof(MEMLIST_ENTRY);
+	entry = AbpValidateAndProbe(memPtr);
 
-	entry = (PMEMLIST_ENTRY)realMem;
-
-	if (entry->mem != memPtr)
+	if (!entry)
 	{
-		DBGPRINT("Invalid memory block (%p)",memPtr);
+		DBGPRINT("invalid memory %p", memPtr);
 		return;
 	}
+	
+	if (entry->track)
+		DBGPRINT("%p is being freed", memPtr);
 
 	AcqMemListSpinlock();
 
@@ -284,21 +321,19 @@ void AbRevealPossibleMemoryLeaks()
 void AbTrackMemory_DBG(void *memPtr)
 {
 	PMEMLIST_ENTRY entry;
-	BYTE *realMem;
 
 	if (!memPtr)
 		return;
 
-	realMem = ((BYTE *)memPtr) - sizeof(MEMLIST_ENTRY);
+	entry = AbpValidateAndProbe(memPtr);
 
-	entry = (PMEMLIST_ENTRY)realMem;
-
-	if (entry->mem != memPtr)
+	if (!entry)
 	{
-		DBGPRINT("Invalid memory block (%p)", memPtr);
+		DBGPRINT("invalid memory %p", memPtr);
 		return;
 	}
 
+	DBGPRINT("memory %p will be tracked.", memPtr);
 
 	entry->track = TRUE;
 

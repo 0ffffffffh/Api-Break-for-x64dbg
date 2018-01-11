@@ -33,14 +33,14 @@ typedef unsigned char uchar;
 
 
 #define ALLOCOBJECT(type) (type *)AbMemoryAlloc(sizeof(type))
-#define FREEOBJECT(ob) AbMemoryFree(ob)
+#define FREEOBJECT(ob) AbMemoryFree((ob))
 
-#define RESIZEOBJECTLIST(type, obj, newSize) (type *)AbMemoryRealloc(obj,sizeof(type) * newSize)
+#define RESIZEOBJECTLIST(type, obj, newSize) (type *)AbMemoryRealloc((obj),sizeof(type) * (newSize))
 
 #define ALLOCSTRINGW(size) (LPWSTR)AbMemoryAlloc(sizeof(WCHAR) * ((size)+1))
 #define ALLOCSTRINGA(size) (LPSTR)AbMemoryAlloc(sizeof(CHAR) * ((size)+1))
 
-#define FREESTRING(str) AbMemoryFree((void *)str)
+#define FREESTRING(str) AbMemoryFree((void *)(str))
 
 #if _DEBUG
 #define DBGBREAK __debugbreak

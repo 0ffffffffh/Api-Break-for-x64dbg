@@ -151,6 +151,7 @@ bool AbpDeregisterModule(ModuleApiInfo *mai)
 {
     apilist::iterator apit;
     modlist::iterator modit;
+	ApiFunctionInfo *afi;
     
     if (!mai)
         return false;
@@ -158,12 +159,15 @@ bool AbpDeregisterModule(ModuleApiInfo *mai)
     
     for (apit = mai->apiList->begin(); apit != mai->apiList->end(); apit++)
     {
-        if (apit->second->callInfo.calls)
-            FREEOBJECT(apit->second->callInfo.calls);
+		afi = apit->second;
 
-        FREEOBJECT(apit->second);
+        if (afi->callInfo.calls)
+            FREEOBJECT(afi->callInfo.calls);
+
+        FREEOBJECT(afi);
     }
     
+	mai->listCount = 0;
     mai->apiList->clear();
 
     delete mai->apiList;
@@ -186,6 +190,10 @@ bool AbpRegisterApi(SymbolInfo *sym, ApiFunctionInfo **pafi)
 {
     ModuleApiInfo *mai = NULL;
     ApiFunctionInfo *afi = NULL;
+	BOOL afiExist = FALSE;
+
+	if (pafi)
+		*pafi = NULL;
 
     CharLowerA(sym->mod);
 
@@ -204,22 +212,28 @@ bool AbpRegisterApi(SymbolInfo *sym, ApiFunctionInfo **pafi)
         AbpModuleList.push_back(mai);
     }
 
+	if ((afi = AbpSearchApiFunctionInfo(mai, sym->name)))
+	{
+		afiExist = TRUE;
+	}
 
-    
-    afi = ALLOCOBJECT(ApiFunctionInfo);
 
-    if (!afi)
-        return false;
+	if (!afiExist)
+	{
+		afi = ALLOCOBJECT(ApiFunctionInfo);
 
-    strcpy(afi->name, sym->name);
-    afi->rva = sym->rva;
-    
-    afi->ownerModule = mai;
+		if (!afi)
+			return false;
 
-    mai->apiList->insert({ string(sym->name), afi });
+		strcpy(afi->name, sym->name);
 
-    mai->listCount++;
+		mai->apiList->insert({ string(sym->name), afi });
+		mai->listCount++;
+	}
 
+	afi->rva = sym->rva;
+	afi->ownerModule = mai;
+	
     if (pafi)
         *pafi = afi;
 
@@ -267,11 +281,10 @@ duint AbpGetPEDataOfMainModule(duint type, int sectIndex)
 INTERNAL_EXPORT bool AbiRegisterDynamicApi(const char *module, const char *api, duint mod, duint apiAddr, duint apiRva)
 {
     SymbolInfo sym;
-    ApiFunctionInfo *afi;
+    ApiFunctionInfo *afi = NULL;
 
     DBGPRINT("Registering dynaload api %s(%p) : %s(%p)", module, mod, api, apiAddr);
-    
-    
+
     memset(&sym, 0, sizeof(SymbolInfo));
     strcpy(sym.mod, module);
     strcpy(sym.name, api);
@@ -505,15 +518,16 @@ bool AbLoadAvailableModuleAPIs(bool onlyImportsByExe)
             }
             else if (sym->type == Export && !HlpEndsWithA(sym->mod,".exe",FALSE, 4))
             {
-
-				
                 //Ok. we walkin on the real export modules now.
                 //try to get AFI if there is exist a reserved for psoude import data
                 afi = AbpSearchApiFunctionInfo(mai, sym->name);
 				
 				//If exist make a real registration for exist slot
-                if (afi != NULL)
-                    AbpRegisterApi(sym, NULL);
+				if (afi != NULL)
+				{
+					AbpRegisterApi(sym, NULL);
+				}
+
             }
         }
         else

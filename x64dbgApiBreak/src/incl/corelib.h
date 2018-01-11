@@ -28,14 +28,14 @@ void AbMemoryFree_DBG(void *memPtr);
 void AbTrackMemory_DBG(void *memPtr);
 
 #define AbMemoryAlloc(size)					AbMemoryAlloc_DBG((size), __FILE__, __FUNCTION__,__LINE__)
-#define AbMemoryRealloc(memPtr, newSize)	AbMemoryRealloc_DBG(memPtr,(newSize),__FILE__, __FUNCTION__,__LINE__)
-#define AbMemoryFree(memPtr)				AbMemoryFree_DBG(memPtr)
-#define AbTrackMemory(memPtr)				AbTrackMemory_DBG(memPtr)
+#define AbMemoryRealloc(memPtr, newSize)	AbMemoryRealloc_DBG((memPtr),(newSize),__FILE__, __FUNCTION__,__LINE__)
+#define AbMemoryFree(memPtr)				AbMemoryFree_DBG((memPtr))
+#define AbTrackMemory(memPtr)				AbTrackMemory_DBG((memPtr))
 
 #else
-#define AbMemoryAlloc(size)					_AbMemoryAlloc(size)
-#define AbMemoryRealloc(memPtr, newSize)	_AbMemoryRealloc(memPtr,newSize)
-#define AbMemoryFree(memPtr)				_AbMemoryFree(memPtr)
+#define AbMemoryAlloc(size)					_AbMemoryAlloc((size))
+#define AbMemoryRealloc(memPtr, newSize)	_AbMemoryRealloc((memPtr),(newSize))
+#define AbMemoryFree(memPtr)				_AbMemoryFree((memPtr))
 #define AbTrackMemory(memPtr)				
 #endif
 
