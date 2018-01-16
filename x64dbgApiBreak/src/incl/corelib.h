@@ -22,6 +22,7 @@ bool AbMemReadGuaranteed(duint va, void *dest, duint size);
 #define TRACK_MEMORY_ALLOCATIONS
 
 #ifdef TRACK_MEMORY_ALLOCATIONS
+
 void *AbMemoryAlloc_DBG(int size,const char *file, const char *func, const int line);
 void *AbMemoryRealloc_DBG(void *memPtr, int newSize, const char *file, const char *func, const int line);
 void AbMemoryFree_DBG(void *memPtr);
@@ -31,6 +32,19 @@ void AbTrackMemory_DBG(void *memPtr);
 #define AbMemoryRealloc(memPtr, newSize)	AbMemoryRealloc_DBG((memPtr),(newSize),__FILE__, __FUNCTION__,__LINE__)
 #define AbMemoryFree(memPtr)				AbMemoryFree_DBG((memPtr))
 #define AbTrackMemory(memPtr)				AbTrackMemory_DBG((memPtr))
+
+#ifdef __cplusplus
+
+void *operator new(size_t size, char *func, char *file, int line);
+
+//this just for compiler warning. it will forward to standart delete call
+void operator delete(void *memory, char *func, char *file, int line);
+
+void operator delete(void *memory);
+
+#define new new(__FUNCTION__, __FILE__, __LINE__)
+
+#endif
 
 #else
 #define AbMemoryAlloc(size)					_AbMemoryAlloc((size))

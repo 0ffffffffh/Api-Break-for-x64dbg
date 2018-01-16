@@ -217,17 +217,17 @@ void __AbpInitMenu()
 
 DBG_LIBEXPORT bool pluginit(PLUG_INITSTRUCT* initStruct)
 {
-    initStruct->sdkVersion = PLUG_SDKVERSION;
-    initStruct->pluginVersion = MAKEWORD(AB_VERSION_MAJOR, AB_VERSION_MINOR);
-    strcpy_s(initStruct->pluginName, 256, "Api Break");
-    AbPluginHandle = initStruct->pluginHandle;
-
 #if _DEBUG
 	if (MessageBoxA(NULL, "Wanna break into debugger?", "Dive-in", MB_YESNO | MB_ICONQUESTION) == IDYES)
 	{
 		__debugbreak();
 	}
 #endif
+
+    initStruct->sdkVersion = PLUG_SDKVERSION;
+	initStruct->pluginVersion = (AB_VERSION_MAJOR * 10) + AB_VERSION_MINOR;
+    strcpy_s(initStruct->pluginName, 256, "Api Break");
+    AbPluginHandle = initStruct->pluginHandle;
 
 	if (AbpNeedsNewerx64Dbg())
 	{
@@ -378,7 +378,7 @@ LONG WINAPI AbpShowOutputArgumentQuestion(LPVOID p)
     BASIC_INSTRUCTION_INFO instr;
     duint addr;
     char msgBuf[512];
-    LPSTR mapResult;
+	LPSTR mapResult;
 
     BpCallbackContext *bpcb = (BpCallbackContext *)p;
     

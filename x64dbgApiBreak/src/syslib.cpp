@@ -98,13 +98,15 @@ void _AbMemoryFree(void *memPtr)
 
 void AbRevealPossibleMemoryLeaks()
 {
+	DBGPRINT("Checking for possible leaked memory blocks");
+
 	if (!AbpMemList.head)
 	{
 		DBGPRINT("Great! Everything's fine. No leaked memory!");
 		return;
 	}
 
-	DBGPRINT("Oh no. There is a bit memory leak.");
+	DBGPRINT("Oh no. There is a some memory leak.");
 
 	for (PMEMLIST_ENTRY entry = AbpMemList.head; entry != NULL; entry = entry->next)
 	{
@@ -132,8 +134,16 @@ void *AbMemoryAlloc_DBG(int size, const char *file, const char *func, const int 
 	entry->mem = umem;
 	entry->size = size;
 	
-	strcpy_s(entry->filename, file);
-	strcpy_s(entry->function, func);
+	if (file != NULL)
+		strcpy_s(entry->filename, file);
+	else
+		strcpy_s(entry->filename, "vclib");
+	
+	if (func != NULL)
+		strcpy_s(entry->function, func);
+	else
+		strcpy_s(entry->function, "unknown");
+	
 	entry->line = line;
 
 	
@@ -311,6 +321,43 @@ void AbMemoryFree_DBG(void *memPtr)
 	RelMemListSpinlock();
 
 }
+
+//#define SKIP_UNNAMED_ALLOCATION
+
+#ifdef __cplusplus
+
+#if defined(new)
+#undef new 
+#endif
+
+void *operator new(size_t size, char *func, char *file, int line)
+{
+	return AbMemoryAlloc_DBG(size, func, file, line);
+}
+
+void *operator new(size_t size)
+{
+#ifdef SKIP_UNNAMED_ALLOCATION
+	return malloc(size);
+#else
+	return AbMemoryAlloc_DBG(size, NULL, NULL, 0);
+#endif
+}
+
+void operator delete(void *memory, char *func, char *file, int line)
+{
+	operator delete(memory);
+}
+
+void operator delete(void *memory)
+{
+	AbMemoryFree_DBG(memory);
+}
+
+
+#endif
+
+
 #else
 void AbRevealPossibleMemoryLeaks()
 {

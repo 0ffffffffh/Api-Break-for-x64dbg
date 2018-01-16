@@ -52,7 +52,7 @@ typedef unsigned char uchar;
 
 #define AB_VERSION_MAJOR 0
 #define AB_VERSION_MINOR 5
-#define AB_VERSION_BUILD 38
+#define AB_VERSION_BUILD 39
 
 #if _WIN64
 #define AB_PLATFORM     "x64"

@@ -53,6 +53,13 @@
 #define FS_EXPECTINCLFILEPATH           FAILBASE_PARSER + 21
 #define FS_EXPECTIDENT					FAILBASE_PARSER + 22
 
+
+typedef struct __Token
+{
+	char token[256];
+	int col;
+	int line;
+}*PToken, Token;
 //LINKED LIST
 
 #define RECORD_OF(node, type)   ( (type)((node)->value) )
@@ -184,15 +191,15 @@ typedef struct
 	PVOID mappedType;
 }*PTYPEALIAS,TYPEALIAS;
 
-#define SMMP_WORKDIR_STACKSIZE  10
+#define SMMP_PATH_STACKSIZE  10
 typedef struct
 {
     struct {
         BOOL    isLocal;
         WCHAR   workDir[MAX_PATH];
-    }Stack[SMMP_WORKDIR_STACKSIZE];
+    }Stack[SMMP_PATH_STACKSIZE];
     WORD        spi;
-}WORKDIR_STACK;
+}PATH_STACK;
 
 static typeidents TYPE_IDENTS[] =
 {
@@ -221,6 +228,7 @@ static typeidents TYPE_IDENTS[] =
 #define MAX_USABLE_TYPE_IDENTS      (MAX_TYPE_IDENTS - SMM_SPECIAL_PRIMITIVE_COUNT)
 
 WCHAR SmmpScriptWorkDir[MAX_PATH] = { 0 };
+WCHAR SmmpCurrentParsingFile[MAX_PATH] = { 0 };
 BOOL SmmpWorkDirIsLocal = TRUE;
 
 PSLIST  SmmpUserTypeList = NULL, SmmpFnSignList = NULL;
@@ -228,7 +236,8 @@ PSLIST SmmpAliasList = NULL;
 PSLIST  SmmpTypeList = NULL;
 PDMA    SmmpParseErrorContent = NULL;
 
-WORKDIR_STACK SmmpWorkDirStack;
+PATH_STACK SmmpWorkDirStack;
+PATH_STACK SmmpParsingFileStack;
 
 #include <rtf.h>
 
@@ -286,63 +295,79 @@ const char *FAIL_MESSAGES[] =
 };
 
 
-void SmmpInitWorkdirStack()
+void SmmpInitPathStack(PATH_STACK *pwds)
 {
-    memset(SmmpWorkDirStack.Stack, 0, sizeof(SmmpWorkDirStack.Stack));
-    SmmpWorkDirStack.spi = SMMP_WORKDIR_STACKSIZE;
+    memset(pwds->Stack, 0, sizeof(pwds->Stack));
+    pwds->spi = SMMP_PATH_STACKSIZE;
 }
 
-void SmmpPushWorkdir()
+void SmmpPushPath(PATH_STACK *pwds,WCHAR *path)
 {
-    WORD spi = SmmpWorkDirStack.spi - 1;
+    WORD spi = pwds->spi - 1;
 
     //Ps. Dont be confused. WORD is an unsinged type and
     //when it gets a less than zero value for exam (-1)
     //It's sign bit will be overflowed, and its evaluated as WORD's max value
     //That means the spi value will be greater than WORKDIR_STACKSIZE,
     //And We will know that the stack is full
-    if (spi > SMMP_WORKDIR_STACKSIZE)
+    if (spi > SMMP_PATH_STACKSIZE)
         return;
 
-    SmmpWorkDirStack.Stack[spi].isLocal = !HlpBeginsWithW(SmmpScriptWorkDir, L"http", FALSE, 4);
-    wcscpy(SmmpWorkDirStack.Stack[spi].workDir, SmmpScriptWorkDir);
-    SmmpWorkDirStack.spi--;
+	pwds->Stack[spi].isLocal = !HlpBeginsWithW(path, L"http", FALSE, 4);
+    wcscpy(pwds->Stack[spi].workDir, path);
+	pwds->spi--;
 }
 
-BOOL SmmpIsPreviousWorkdirLocal()
+BOOL SmmpIsPreviousWorkdirLocal(PATH_STACK *pwds)
 {
-
-    if (SmmpWorkDirStack.spi == SMMP_WORKDIR_STACKSIZE)
+    if (pwds->spi == SMMP_PATH_STACKSIZE)
         return FALSE;
 
-    return SmmpWorkDirStack.Stack[SmmpWorkDirStack.spi + 1].isLocal;
+    return pwds->Stack[pwds->spi + 1].isLocal;
 }
 
-BOOL SmmpPopWorkdir(BOOL *isLocal)
+BOOL SmmpPopPath(PATH_STACK *pwds, WCHAR *popPath, BOOL *isLocal)
 {
-    WORD spi = SmmpWorkDirStack.spi;
+    WORD spi = pwds->spi;
 
-    if (spi == SMMP_WORKDIR_STACKSIZE)
+    if (spi == SMMP_PATH_STACKSIZE)
         return FALSE;
 
-    wcscpy(SmmpScriptWorkDir, SmmpWorkDirStack.Stack[spi].workDir);
-    *isLocal = SmmpWorkDirStack.Stack[spi].isLocal;
-    SmmpWorkDirIsLocal = *isLocal;
-    SmmpWorkDirStack.spi++;
+    wcscpy(popPath, pwds->Stack[spi].workDir);
+
+	if (isLocal)
+	{
+		*isLocal = pwds->Stack[spi].isLocal;
+		SmmpWorkDirIsLocal = *isLocal;
+	}
+
+	pwds->spi++;
 
     return TRUE;
 }
 
-void SmmpRaiseParseError(LONG err)
+void SmmpRaiseParseError(LONG err, PToken tok)
 {
     const LONG totalErrString = sizeof(FAIL_MESSAGES) / sizeof(char *);
-    
+	LPSTR errorMessage = NULL, fileName = NULL;
+
     if (err >= 0 && err <= totalErrString)
     {
-        if (SmmpParseErrorContent)
-            DmaStringWriteA(SmmpParseErrorContent, "%s\r\n", FAIL_MESSAGES[err - 1]);
-        else
-            DBGPRINT2(FAIL_MESSAGES[err - 1]);
+		if (!tok)
+		{
+			if (SmmpParseErrorContent)
+				DmaStringWriteA(SmmpParseErrorContent, "%s\r\n", FAIL_MESSAGES[err - 1]);
+			else
+				DBGPRINT("%s", FAIL_MESSAGES[err - 1]);
+		}
+		else
+		{
+			fileName = HlpWideToAnsiString(SmmpCurrentParsingFile);
+			HlpPrintFormatBufferA(&errorMessage, "Parsing error at \r\n%s\r\ncolumn: %d, line: %d\r\nerror: %s",
+				fileName, tok->col, tok->line, FAIL_MESSAGES[err - 1]);
+			MessageBoxA(NULL, errorMessage, "parse error", MB_ICONWARNING);
+			FREESTRING(fileName);
+		}
     }
 }
 
@@ -706,7 +731,7 @@ __forceinline BOOL SmmpNextnode(PSLISTNODE *node)
     return TRUE;
 }
 
-#define Stringof(node) ( RECORD_OF((node), char *) )
+#define Stringof(node) (RECORD_OF((node), PToken)->token)
 
 #define OneWayExit(fs, exitLabel)  { failStep = fs; goto exitLabel; }
 
@@ -766,8 +791,10 @@ BOOL SmmpIsChar(char c)
 }
 
 #define SmmpPushToken() { \
-                            tok = ALLOCSTRINGA(bufi); \
-                            strcpy(tok, buf); \
+							tok = ALLOCOBJECT(Token); \
+                            strcpy(tok->token, buf); \
+							tok->col = col; \
+							tok->line = line; \
                             memset(buf, 0, sizeof(buf)); \
                             bufi = 0; \
                             SmmpAddSList(tokList, tok); \
@@ -778,9 +805,10 @@ BOOL SmmpTokenize(LPCSTR typeDefString, PSLIST *tokenList)
     char buf[512] = { 0 };
     const char *p = typeDefString;
     int bufi = 0;
-    char *tok;
+    PToken tok;
     BOOL numLoad = FALSE;
 	BOOL skip = FALSE;
+	int line = 1, col = 1;
 
     PSLIST tokList;
 
@@ -790,6 +818,14 @@ BOOL SmmpTokenize(LPCSTR typeDefString, PSLIST *tokenList)
 
     while (*p)
     {
+		if (*p == '\n')
+		{
+			line++;
+			col = 1;
+		}
+		else if (*p != '\r')
+			col++;
+
 		if (skip)
 		{
 			if (*p == '*' && *(p + 1) == '/')
@@ -807,9 +843,12 @@ BOOL SmmpTokenize(LPCSTR typeDefString, PSLIST *tokenList)
             if (bufi > 0)
                 SmmpPushToken();
 
-            tok = ALLOCSTRINGA(4);
-            *tok = *p;
-            *(tok + 1) = 0;
+			tok = ALLOCOBJECT(Token);
+			tok->token[0] = *p;
+			tok->token[1] = 0;
+
+			tok->col = col;
+			tok->line = line;
 
             SmmpAddSList(tokList, tok);
         }
@@ -939,7 +978,7 @@ exit:
 
 
     if (!success)
-        SmmpRaiseParseError(failStep);
+        SmmpRaiseParseError(failStep,RECORD_OF(node,PToken));
 
     return success;
 }
@@ -1148,7 +1187,7 @@ finish:
 
     if (failStep > 0)
     {
-        SmmpRaiseParseError(failStep);
+        SmmpRaiseParseError(failStep,RECORD_OF(node,PToken));
 
         if (fnSign != NULL)
             FREEOBJECT(fnSign);
@@ -1182,7 +1221,7 @@ BOOL SmmpParseAlias(PSLISTNODE *startNode)
 
 	if (!SmmpNextnode(&node))
 	{
-		SmmpRaiseParseError(FS_EXPECTTYPE);
+		SmmpRaiseParseError(FS_EXPECTTYPE,RECORD_OF(node,PToken));
 		return FALSE;
 	}
 
@@ -1190,7 +1229,7 @@ BOOL SmmpParseAlias(PSLISTNODE *startNode)
 
 	if (!SmmpNextnode(&node))
 	{
-		SmmpRaiseParseError(FS_EXPECTIDENT);
+		SmmpRaiseParseError(FS_EXPECTIDENT, RECORD_OF(node, PToken));
 		return FALSE;
 	}
 
@@ -1198,7 +1237,7 @@ BOOL SmmpParseAlias(PSLISTNODE *startNode)
 
 	if (!SmmpRegisterAlias(aliasName, realType))
 	{
-		SmmpRaiseParseError(FS_TYPENOTFOUND);
+		SmmpRaiseParseError(FS_TYPENOTFOUND, RECORD_OF(node, PToken));
 		return FALSE;
 	}
 	
@@ -1266,7 +1305,7 @@ exit:
     *startNode = node;
 
     if (!success)
-        SmmpRaiseParseError(failStep);
+        SmmpRaiseParseError(failStep, RECORD_OF(node, PToken));
 
     *typeInfo = pti;
 
@@ -1706,7 +1745,7 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
 
             if (err >= 0)
             {
-                SmmpRaiseParseError(err);
+                SmmpRaiseParseError(err, RECORD_OF(node, PToken));
 				goto exit;
             }
 
@@ -1726,8 +1765,7 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
 
             continue;
         }
-
-        if (!_stricmp(Stringof(node), "fnsign"))
+		else if (!_stricmp(Stringof(node), "fnsign"))
         {
             if (!SmmpParseFunctionSignature(&node, &fnSign))
             {
@@ -1756,6 +1794,11 @@ BOOL SmmpParseType(LPCSTR typeDefString, WORD *typeCount)
 		{
 			if (!SmmpParseAlias(&node))
 				goto exit;
+		}
+		else
+		{
+			SmmpRaiseParseError(FS_UNEXPECTED_TOKEN, RECORD_OF(node, PToken));
+			goto exit;
 		}
 
     }
@@ -1791,6 +1834,7 @@ BOOL SmmParseType(LPCSTR typeDefString, WORD *typeCount)
     return success;
 }
 
+
 BOOL SmmpParseFromInternet(LPCWSTR sourceUrl, WORD *typeCount)
 {
     BYTE* content;
@@ -1817,6 +1861,9 @@ BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount)
     WCHAR workDir[MAX_PATH];
     BOOL isInetSource,workDirStacked=FALSE;
 
+	wcscpy(SmmpCurrentParsingFile, fileName);
+	SmmpPushPath(&SmmpParsingFileStack, (WCHAR *)fileName);
+
     isInetSource = HlpBeginsWithW(fileName, L"http", FALSE, 4);
 
     //Initial
@@ -1834,7 +1881,7 @@ BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount)
 
         if (_wcsicmp(workDir, SmmpScriptWorkDir))
         {
-            SmmpPushWorkdir();
+            SmmpPushPath(&SmmpWorkDirStack, SmmpScriptWorkDir);
             SmmpWorkDirIsLocal = !isInetSource;
             wcscpy(SmmpScriptWorkDir, workDir);
             workDirStacked = TRUE;
@@ -1848,8 +1895,10 @@ BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount)
 
         if (workDirStacked)
         {
-            SmmpPopWorkdir(&isInetSource);
+            SmmpPopPath(&SmmpWorkDirStack,SmmpScriptWorkDir,&isInetSource);
         }
+
+		SmmpPopPath(&SmmpParsingFileStack, SmmpCurrentParsingFile, NULL);
 
         return result;
     }
@@ -1880,8 +1929,11 @@ BOOL SmmParseFromFileW(LPCWSTR fileName, WORD *typeCount)
     if (!ReadFile(fileHandle, fileContent, fsLo, &read, NULL))
         goto exit;
 
+	
     result = SmmParseType(fileContent, typeCount);
 exit:
+
+	SmmpPopPath(&SmmpParsingFileStack, SmmpCurrentParsingFile, NULL);
 
     if (fileContent)
         AbMemoryFree(fileContent);
@@ -1890,7 +1942,7 @@ exit:
 
     if (workDirStacked)
     {
-        SmmpPopWorkdir(&isInetSource);
+		SmmpPopPath(&SmmpWorkDirStack,SmmpScriptWorkDir, &isInetSource);
     }
 
     return result;
@@ -1954,8 +2006,9 @@ VOID SmmInitializeResources()
 		goto exit;
 
 	DmaCreateAdapter(sizeof(char), 64, &SmmpParseErrorContent);
-
-	SmmpInitWorkdirStack();
+	
+	SmmpInitPathStack(&SmmpParsingFileStack);
+	SmmpInitPathStack(&SmmpWorkDirStack);
 
 	success = true;
 exit:
@@ -2057,7 +2110,8 @@ VOID SmmReleaseResources(bool fullRelease)
 		}
     }
 
-    SmmpInitWorkdirStack();
+    SmmpInitPathStack(&SmmpWorkDirStack);
+	SmmpInitPathStack(&SmmpParsingFileStack);
 
     if (SmmpParseErrorContent)
     {

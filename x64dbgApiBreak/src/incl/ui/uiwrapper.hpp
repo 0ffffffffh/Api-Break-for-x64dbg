@@ -157,6 +157,10 @@ public:
     ~UiWrapper(void)
     {
         DestroyControlResources();
+
+		if (this->wci.pci != NULL)
+			FREEOBJECT(this->wci.pci);
+
         CloseHandle(this->initCompletedEvent);
 
         if (!this->killingSelf)

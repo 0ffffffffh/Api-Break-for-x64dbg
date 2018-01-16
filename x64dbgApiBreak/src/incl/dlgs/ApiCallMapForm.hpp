@@ -66,11 +66,22 @@ public:
             FREESTRING(mapContent);
     }
 
+	void OnCommand(WPARAM wp, LPARAM lp)
+	{
+		switch (LOWORD(wp))
+		{
+		case IDC_MAPDLG_BTNCONT:
+			AbDebuggerRun();
+			Close();
+			break;
+		}
+	}
+
     void OnInit()
     {
         EDITSTREAM es;
         
-        es.dwCookie = (DWORD_PTR)this;
+		es.dwCookie = (DWORD_PTR)this;
         es.dwError = 0;
         es.pfnCallback = EditStreamCallback;
 

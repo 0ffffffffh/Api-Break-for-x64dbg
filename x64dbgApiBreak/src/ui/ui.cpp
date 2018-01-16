@@ -323,6 +323,8 @@ DWORD WINAPI IntUiWorker(VOID *Arg)
 		UiReleaseObject(uiObj);
 	}
 
+	DBGPRINT("Ui thread exited %x (%d)", GetCurrentThreadId(), GetCurrentThreadId());
+
 	return 0;
 }
 

@@ -42,11 +42,8 @@ protected:
         
         reqLen++; //Include null term
 
-        if ((ULONG)reqLen > size)
-        {
-            return 0;
-        }
-        else if (size == 0)
+
+        if (size == 0)
         {
             if (IsWindowUnicode(MyHandle()))
                 *pValue = (BYTE *)ALLOCSTRINGW(reqLen);
@@ -56,6 +53,10 @@ protected:
             if (*pValue == NULL)
                 return 0;
         }
+		else if ((ULONG)reqLen > size)
+		{
+			return 0;
+		}
 
 
         readLen = SendControlMsg(WM_GETTEXT, (WPARAM)reqLen, (LPARAM)*pValue);

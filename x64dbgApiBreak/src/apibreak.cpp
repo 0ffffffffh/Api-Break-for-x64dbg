@@ -151,7 +151,7 @@ bool AbpDeregisterModule(ModuleApiInfo *mai)
 {
     apilist::iterator apit;
     modlist::iterator modit;
-	ApiFunctionInfo *afi;
+    ApiFunctionInfo *afi;
     
     if (!mai)
         return false;
@@ -159,7 +159,7 @@ bool AbpDeregisterModule(ModuleApiInfo *mai)
     
     for (apit = mai->apiList->begin(); apit != mai->apiList->end(); apit++)
     {
-		afi = apit->second;
+        afi = apit->second;
 
         if (afi->callInfo.calls)
             FREEOBJECT(afi->callInfo.calls);
@@ -167,9 +167,8 @@ bool AbpDeregisterModule(ModuleApiInfo *mai)
         FREEOBJECT(afi);
     }
     
-	mai->listCount = 0;
+    mai->listCount = 0;
     mai->apiList->clear();
-
     delete mai->apiList;
 
     for (modit = AbpModuleList.begin(); modit != AbpModuleList.end(); modit++)
