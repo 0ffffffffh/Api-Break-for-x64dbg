@@ -121,7 +121,7 @@ NOTE: Currently, nested types are not fully supported. (But I will completely.)
 @incl 'base/base.abtf'
 
 /* 'HelloType' defined in base/base.abtf as user type structure */
-alias HelloType MyHelloType;
+alias HelloType MyHelloType
 
 fnsign pointer kernel32.dll!CreateFileW(wstring fileName, DWORD desiredAccess, DWORD shareMode, pointer secAttrib, DWORD creationDisp, DWORD flagAttrib, out pointer templFile)
 
